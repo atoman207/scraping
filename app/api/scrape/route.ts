@@ -10,13 +10,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendLog, createJob, finishJob, getJob } from "../../../lib/jobs";
 import { BlockedError, type ScrapedSeller } from "../../../lib/scraper/types";
+import { checkScraperEnvironment } from "../../../lib/scraper/environment";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 3600;
+// Vercelの上限を超えるとデプロイが失敗する(Hobby=60秒 / Pro=300秒)。
+// スクレイピング自体はレスポンスを待たせずバックグラウンドで走るので、
+// このハンドラ自体は数秒で返れば足りる。
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id が必要です" }, { status: 400 });
+  // id なしの場合は「この環境でスクレイパーが使えるか」を返す
+  if (!id) return NextResponse.json(checkScraperEnvironment());
   const job = getJob(id);
   if (!job) {
     return NextResponse.json(
@@ -28,6 +33,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const env = checkScraperEnvironment();
+  if (!env.available) {
+    return NextResponse.json({ error: `${env.reason} ${env.hint ?? ""}`.trim() }, { status: 503 });
+  }
+
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const kind = String(body.kind ?? "");
 

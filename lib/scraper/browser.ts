@@ -9,7 +9,7 @@
  *  - 日本語ロケール/東京タイムゾーンを指定するのは、日本向けの検索結果と価格表記を
  *    正しく得るために必要な設定(表示条件を合わせるためのもの)。
  */
-import { chromium, type Browser, type BrowserContext, type Page, type Response } from "playwright";
+import type { Browser, BrowserContext, Page, Response } from "playwright";
 import { BlockedError } from "./types";
 
 export type ScraperOptions = {
@@ -63,6 +63,7 @@ export class ScraperSession {
 
   async start(): Promise<void> {
     if (this.browser) return;
+    const { chromium } = await import("playwright");
     this.browser = await chromium.launch({ headless: this.opts.headless });
     this.context = await this.browser.newContext({
       locale: "ja-JP",

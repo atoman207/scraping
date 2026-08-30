@@ -44,6 +44,7 @@ export default function ScrapeRunner({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ keyword: "", aruaru: "", pages: 2, resolve: 20 });
+  const [env, setEnv] = useState<{ available: boolean; reason?: string; hint?: string } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   const running = job?.status === "running" || starting;
@@ -68,6 +69,15 @@ export default function ScrapeRunner({
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [job?.log.length]);
+
+  // この環境でスクレイパーが動くかを最初に確認する。
+  // Vercelなどサーバーレスでは動かないので、押せないボタンではなく理由を出す。
+  useEffect(() => {
+    fetch("/api/scrape", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setEnv(d))
+      .catch(() => setEnv({ available: true }));
+  }, []);
 
   const start = useCallback(async () => {
     setError(null);
@@ -103,6 +113,22 @@ export default function ScrapeRunner({
       </div>
       {description && (
         <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "var(--text-muted)" }}>{description}</p>
+      )}
+
+      {env && !env.available && (
+        <div className="note note-info" style={{ marginBottom: 12 }}>
+          <IconAlert size={15} />
+          <span>
+            <strong>この環境では実行できません。</strong>
+            {env.reason}
+            {env.hint && (
+              <>
+                <br />
+                {env.hint}
+              </>
+            )}
+          </span>
+        </div>
       )}
 
       {withSearchForm ? (
@@ -159,7 +185,7 @@ export default function ScrapeRunner({
           <button
             className="btn btn-primary"
             onClick={start}
-            disabled={running || !form.keyword.trim()}
+            disabled={running || !form.keyword.trim() || env !== null && !env.available}
             type="button"
           >
             {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
@@ -170,7 +196,7 @@ export default function ScrapeRunner({
         <button
           className={compact ? "btn btn-ghost btn-sm" : "btn btn-primary"}
           onClick={start}
-          disabled={running}
+          disabled={running || env !== null && !env.available}
           type="button"
         >
           {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}

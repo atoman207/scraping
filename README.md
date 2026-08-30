@@ -185,14 +185,58 @@ npm run test:engine
 
 ## デプロイ(Vercel)
 
-元のREADMEに書かれていた「SQLiteはサーバーレスで永続化されない」という問題は、
-Supabaseにしたことで解消しています。そのままVercelにデプロイできます。
+**画面(①②③の閲覧・原価入力・利益計算)はVercelで問題なく動きます。**
+**スクレイピングだけはVercelでは動きません。** ヘッドレスブラウザ(Chromium)を
+サーバーレス環境で起動できないためです。役割を分けて使ってください。
+
+| 機能 | Vercel | 常駐サーバー(PC / VPS) |
+|---|---|---|
+| ①②③の画面表示・原価入力・利益計算 | ○ | ○ |
+| 画面のスクレイパー実行ボタン | ×(理由を表示して無効化) | ○ |
+| `npm run scrape:*` コマンド | × | ○ |
+
+どちらも同じSupabaseを見るので、**手元でスクレイピングして、結果をVercelの画面で見る**
+という使い方ができます。友人に共有するのはVercelのURLだけで済みます。
+
+### 設定手順
 
 1. このフォルダをGitHubにpush
-2. Vercelで Import → Root Directory に `tenbai-next` を指定
-3. Environment Variables に `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` /
-   `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` を設定
+2. Vercelで Import → **Root Directory に `tenbai-next` を指定**(ここを忘れると
+   リポジトリ直下を見に行ってビルドが失敗します)
+3. Environment Variables に以下を設定
+
+   | 変数 | 値 |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | SupabaseのProject URL |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabaseのsecretキー |
+   | `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | `1` |
+   | `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` | 共有相手用のID/パスワード(任意) |
+
+   `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` は、ビルド時に約150MBのChromiumを
+   ダウンロードしないようにするためのものです。どうせ起動できないので、
+   付けておくとビルドが速くなります。
 4. Deploy
+
+### Vercel向けに入れてある対策
+
+- `app/api/scrape/route.ts` の `maxDuration` は **60秒**。
+  Vercelはプランごとに上限(Hobby=60秒 / Pro=300秒)があり、これを超える値を
+  書くとデプロイが失敗します。スクレイピング本体はレスポンスを待たせずに
+  バックグラウンドで走るので、ハンドラ自体は短くて問題ありません。
+- `lib/scraper/browser.ts` は playwright を **動的import** しています。
+  Chromiumが無い環境でもビルドと起動が通ります。
+- `next.config.js` の `outputFileTracingExcludes` で playwright を
+  サーバーレス関数のバンドルから除外しています(関数サイズの上限対策)。
+- `lib/scraper/environment.ts` が実行環境を判定し、Vercel上では
+  画面に理由を表示してボタンを無効化します。APIも503と説明文を返します。
+  「押したのに無言で失敗する」ことはありません。
+
+### 常時スクレイピングしたい場合
+
+VPS(さくらVPS、ConoHa、Hetznerなど)か自宅PCで `npm run build && npm run start` を
+動かせば、画面の実行ボタンもそのまま使えます。Dockerで動かす場合は
+`mcr.microsoft.com/playwright:v1.62.1-jammy` をベースイメージにすると
+Chromiumと依存ライブラリが最初から入っています。
 
 ## セキュリティについて
 
