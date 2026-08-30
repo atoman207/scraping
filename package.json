@@ -1,0 +1,35 @@
+{
+  "name": "tenbai-dashboard-supabase",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "tsx scripts/apply-schema.ts",
+    "import:csv": "tsx scripts/import-csv.ts",
+    "engine:cluster": "tsx scripts/cluster-seller-listings.ts",
+    "engine:rank": "tsx scripts/rank-sellers.ts",
+    "engine:profit": "tsx scripts/profit-calc.ts",
+    "test:engine": "tsx scripts/verify-engine.ts",
+    "scrape:search": "tsx scripts/scrape-search.ts",
+    "scrape:seller": "tsx scripts/scrape-seller.ts",
+    "scrape:sourcing": "tsx scripts/scrape-sourcing.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "next": "14.2.35",
+    "playwright": "^1.62.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^18.3.3",
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4"
+  }
+}

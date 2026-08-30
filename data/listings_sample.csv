@@ -1,0 +1,5 @@
+platform,external_id,seller_external_id,seller_name,seller_rating,seller_review_count,title,price,status,listed_at,sold_at,shipping_cost,image_url,listing_url
+mercari,m101,seller_a,ななまるshop 即購入歓迎,5.0,8994,ポーチ 刺繍 花柄 小物入れ A,1980,sold,2026-08-01,2026-08-04,210,https://placehold.jp/60x60.png,https://jp.mercari.com/item/m101
+mercari,m102,seller_a,ななまるshop 即購入歓迎,5.0,8994,ポーチ 刺繍 花柄 小物入れ B,1950,sold,2026-08-05,2026-08-08,210,https://placehold.jp/60x60.png,https://jp.mercari.com/item/m102
+mercari,m103,seller_a,ななまるshop 即購入歓迎,5.0,8994,ポーチ 刺繍 花柄 小物入れ C,2000,sold,2026-08-09,2026-08-12,215,https://placehold.jp/60x60.png,https://jp.mercari.com/item/m103
+mercari,m104,seller_a,ななまるshop 即購入歓迎,5.0,8994,スマホスタンド 折りたたみ 卓上 木製,1480,sold,2026-08-02,2026-08-08,220,https://placehold.jp/60x60.png,https://jp.mercari.com/item/m104
