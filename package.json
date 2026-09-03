@@ -21,7 +21,8 @@
     "db:stats": "tsx scripts/db-stats.ts",
     "db:check": "tsx scripts/db-check.ts",
     "db:backup": "tsx scripts/db-backup.ts",
-    "test:schema": "tsx scripts/verify-schema.ts"
+    "test:schema": "tsx scripts/verify-schema.ts",
+    "verify:3-1": "tsx scripts/verify-3-1.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

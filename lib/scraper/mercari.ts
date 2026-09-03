@@ -116,6 +116,10 @@ export type ItemDetail = {
   seller_name: string | null;
   shipping_method: string | null;
   shipping_cost: number | null;
+  /** 商品ページの「商品の状態」欄の文言 */
+  condition: string | null;
+  /** 「新品、未使用」なら true。読めなければ null */
+  is_new: boolean | null;
   /** 相対表記("7時間前")から起こした概算の出品日 */
   listed_at: string | null;
 };
@@ -167,7 +171,7 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
       /** 中古も対象に含めるか(既定false=新品、未使用のみ)。せどり用途で true にする */
       includeUsed?: boolean;
       /** ページを1枚読むごとに呼ばれる。進捗表示用 */
-      onPage?: (info: { query: string; page: number; pages: number; got: number; total: number }) => void;
+      onPage?: (info: { query: string; page: number; pages: number; got: number; total: number; numFound: number | null }) => void;
     } = {}
   ): Promise<(ScrapedListing & { matched_keyword: string; is_new: boolean | null; updated_at: string | null })[]> {
     const includeUsed = opts.includeUsed ?? false;
@@ -218,11 +222,13 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
         let pageCount = 0;
         let skipped = 0;
         let last: string | null = null;
+        let found: number | null = null;
         for (const res of responses) {
           const parsed = parseSearchResponse(res, this.shippingMethods);
           pageCount += parsed.items.length;
           skipped += parsed.skipped;
           last = parsed.nextPageToken;
+          if (parsed.numFound !== null) found = parsed.numFound;
           for (const it of parsed.items) {
             if (!collected.has(it.external_id)) {
               collected.set(it.external_id, { ...it, matched: q });
@@ -233,7 +239,8 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
         this.log(
           `  → ${pageCount}件(新規${added}件, 累計${collected.size}件)` + (skipped ? ` ※形式不明で除外${skipped}件` : "")
         );
-        opts.onPage?.({ query: q, page: p + 1, pages: maxPages, got: pageCount, total: collected.size });
+        if (p === 0 && found !== null) this.log(`  メルカリ側の総ヒット数: ${found.toLocaleString()}件`);
+        opts.onPage?.({ query: q, page: p + 1, pages: maxPages, got: pageCount, total: collected.size, numFound: found });
 
         // 次のページが無い/新規が増えないなら、そのクエリは終端
         if (!last) {
@@ -434,7 +441,18 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
   /** 商品ページから詳細(出品者・配送方法など)を読む */
   async getItemDetail(externalId: string): Promise<ItemDetail | null> {
     const url = itemUrl(externalId);
-    const page = await this.session.goto(url, 3000);
+    const page = await this.session.goto(url, 500);
+
+    // 固定の待ち時間だと、描画が間に合わないときに「取得できなかった」のか
+    // 「もともと無い」のか区別がつかなくなる。主要な要素が出るまで待つ。
+    // (出品者リンクは商品ページの中でも遅れて描画されることがある)
+    await this.session.waitForAny("h1", 15000);
+    await this.session.waitForAny(
+      "a[href^='/user/profile/'], a[href^='/shops/profile/'], [data-testid='seller-link']",
+      12000
+    );
+    // 「商品の情報」表は出品者リンクより後に描画されることがあるので少しだけ待つ
+    await page.waitForTimeout(1200);
 
     const d = await page.evaluate(() => {
       const bodyText = document.body.innerText;
@@ -464,6 +482,7 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
         shopText: shopA?.textContent?.trim() ?? null,
         sellerText: sellerLink?.textContent?.trim() ?? null,
         shippingMethod: readRow("配送の方法"),
+        condition: readRow("商品の状態"),
         shippingPayer: readRow("配送料の負担"),
         bodyText: bodyText.slice(0, 4000),
       };
@@ -495,6 +514,8 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
       seller_name: sellerName,
       shipping_method: d.shippingMethod,
       shipping_cost: shippingCostFromMethod(d.shippingMethod),
+      condition: d.condition,
+      is_new: d.condition ? d.condition.includes("新品") : null,
       listed_at: relTime ? relativeJaToDate(relTime[0]) : null,
     };
   }
