@@ -12,7 +12,7 @@
  *   ワーカー(ここ) … 実際にメルカリを巡回してDBへ書く
  *
  * 途中で落ちても、heartbeat が5分途絶えたジョブは別のワーカーが拾い直す
- * (supabase/migrations/004_jobs.sql の claim_job を参照)。
+ * (supabase/schema.sql の claim_job を参照)。
  */
 import "./_env";
 import os from "node:os";

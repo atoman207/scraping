@@ -71,22 +71,22 @@ export function explain(message: string): string {
     return (
       `${message}\n` +
       `  → DBのマイグレーションが未適用です(${missingColumn[2]}.${missingColumn[1]} がありません)。\n` +
-      `     npm run db:check  で状況を確認し、npm run db:migrate で出力されるSQLを\n` +
-      `     Supabase の SQL Editor に貼って実行してください。`
+      `     npm run db:check で状況を確認し、npm run db:push で適用してください。\n` +
+      `     (DATABASE_URL 未設定なら supabase/schema.sql を SQL Editor に貼る)`
     );
   }
   const missingTable = message.match(/Could not find the table '([^']+)'/);
   if (missingTable) {
     return (
       `${message}\n` +
-      `  → テーブル ${missingTable[1]} がありません。npm run db:migrate で出力されるSQLを\n` +
-      `     Supabase の SQL Editor に貼って実行してください。`
+      `  → テーブル ${missingTable[1]} がありません。npm run db:push で適用してください。\n` +
+      `     (DATABASE_URL 未設定なら supabase/schema.sql を SQL Editor に貼る)`
     );
   }
   if (/Could not find the function public\.(claim_job|queue_ahead)/.test(message)) {
     return (
       `${message}\n` +
-      `  → ジョブキューの関数が未作成です。supabase/migrations/004_jobs.sql を\n` +
+      `  → ジョブキューの関数が未作成です。supabase/schema.sql を\n` +
       `     Supabase の SQL Editor で実行してください。`
     );
   }

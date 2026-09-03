@@ -41,7 +41,7 @@ Seller Scope の実データで**表示金額と完全一致**することを検
 
 ### 2. DBスキーマの拡張 ✅
 
-**`supabase/migrations/002_cost_model.sql`**（追記型・何度実行しても安全）
+**`supabase/schema.sql`**（単一ファイル・何度実行しても安全）
 
 - `settings`: `import_tax_pct` を追加
 - `deepdive_items`: `cost_mode` `cost_direct_jpy` `china_domestic_cny` `tariff_cat` `box_count` `packaging_jpy` `monthly_qty` `sell_price_jpy` `shipping_jpy` を追加
@@ -51,7 +51,7 @@ Seller Scope の実データで**表示金額と完全一致**することを検
 
 **適用方法**（`DATABASE_URL` 未設定のため手動）:
 ```bash
-npm run db:migrate          # supabase/_migrations-merged.sql を書き出す
+npm run db:push             # DATABASE_URL があれば自動適用
 ```
 → 出力されたSQLを **Supabase ダッシュボード > SQL Editor** に貼って Run。
 （`.env.local` に `DATABASE_URL` を設定すれば次回から自動適用）

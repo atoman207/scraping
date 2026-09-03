@@ -49,7 +49,7 @@ async function main() {
 
   if (missing.length) {
     console.log(`\n  ※ 未作成のテーブル: ${missing.join(", ")}`);
-    console.log(`     npm run db:migrate で出力したSQLを Supabase の SQL Editor で実行してください。`);
+    console.log(`     npm run db:push を実行してください（DATABASE_URL未設定なら supabase/schema.sql を SQL Editor に貼る）。`);
   }
 
   // ---- 使い切るまでの見積り ----

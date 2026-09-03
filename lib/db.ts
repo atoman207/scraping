@@ -24,7 +24,7 @@ export type Settings = {
   box_weight_kg: number;
   ng_new_item_rate_threshold: number;
   ng_turnover_days_threshold: number;
-  /** 輸入消費税 %。既定0(計上しない)。migrations/002 で追加 */
+  /** 輸入消費税 %。既定0(計上しない)。supabase/schema.sql で追加 */
   import_tax_pct?: number | null;
 };
 

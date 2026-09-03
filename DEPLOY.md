@@ -52,18 +52,16 @@
 cd tenbai-next
 npm run db:check     # 今どこまで当たっているか確認
 ```
-現状は **002 / 003 / 004 がすべて未適用** です。
+現状は **未適用** です（`npm run db:check` で NG が出ます）。
 
 ```bash
-npm run db:migrate   # supabase/_migrations-merged.sql を書き出す
+npm run db:push      # DATABASE_URL があれば自動適用。無ければ手順を案内します
 ```
-→ **Supabase ダッシュボード > SQL Editor** に中身を貼って **Run**
+→ DATABASE_URL 未設定の場合は **supabase/schema.sql** の中身を Supabase の SQL Editor に貼って **Run**
 
-| ファイル | 内容 |
-|---|---|
-| `002_cost_model.sql` | 原価モデル（関税・中国国内送料・梱包費） |
-| `003_listing_signals.sql` | 新品判定・更新日時（新品率と回転日数に必要） |
-| `004_jobs.sql` | ジョブキュー（画面とワーカーの受け渡し） |
+スキーマは **`supabase/schema.sql` の1本だけ**です。
+テーブル・列・制約・索引・ビュー・関数がすべて入っており、**何度実行しても同じ結果になる**ように書いてあります。
+（`npm run test:schema` で、その書き方になっているかを検査できます）
 
 **確認**：
 ```bash
@@ -71,7 +69,7 @@ npm run db:check     # 「すべて適用済みです」と出れば完了
 ```
 
 > `.env.local` に `DATABASE_URL`（Supabase > Project Settings > Database > Connection string の URI）を
-> 設定すると、次回から `npm run db:migrate` が**自動で当たります**。手貼りは今回だけで済みます。
+> 設定すると、次回から `npm run db:push` が**自動で当たります**。手貼りは今回だけで済みます。
 
 ### 2. ブラウザ本体（初回のみ）
 

@@ -81,7 +81,7 @@ export async function saveListings(
   if (!listings.length) return { sellers: sellerIds.size, inserted: 0, skipped: 0 };
 
   const rows = listings.map((l) => {
-    // 検索経由で取れる追加情報(migrations/003 で追加した列)。無ければ null のまま
+    // 検索経由で取れる追加情報(supabase/schema.sql で追加した列)。無ければ null のまま
     const ext = l as ScrapedListing & {
       is_new?: boolean | null;
       updated_at?: string | null;

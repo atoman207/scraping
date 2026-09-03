@@ -12,7 +12,7 @@ const EXPECTED: { table: string; columns: string[]; migration: string }[] = [
   {
     table: "settings",
     columns: ["import_tax_pct"],
-    migration: "002_cost_model.sql",
+    migration: "supabase/schema.sql",
   },
   {
     table: "deepdive_items",
@@ -27,22 +27,22 @@ const EXPECTED: { table: string; columns: string[]; migration: string }[] = [
       "sell_price_jpy",
       "shipping_jpy",
     ],
-    migration: "002_cost_model.sql",
+    migration: "supabase/schema.sql",
   },
   {
     table: "listings",
     columns: ["is_new", "updated_at", "shipping_method_id", "is_shops", "matched_keyword"],
-    migration: "003_listing_signals.sql",
+    migration: "supabase/schema.sql",
   },
   {
     table: "seller_research_results",
     columns: ["genre_count", "seller_type"],
-    migration: "003_listing_signals.sql",
+    migration: "supabase/schema.sql",
   },
   {
     table: "jobs",
     columns: ["kind", "params", "status", "progress", "log", "result", "heartbeat_at", "seq"],
-    migration: "004_jobs.sql",
+    migration: "supabase/schema.sql",
   },
 ];
 
@@ -70,7 +70,7 @@ async function main() {
   const v = await sb.from("deepdive_view").select("cost_mode,import_tax_pct,sell_price_jpy").limit(1);
   if (v.error) {
     ng++;
-    needed.add("002_cost_model.sql");
+    needed.add("supabase/schema.sql");
     console.log(`  NG  ${"deepdive_view".padEnd(26)} ${v.error.message.slice(0, 80)}`);
   } else {
     ok++;
@@ -81,7 +81,7 @@ async function main() {
   const rpc = await sb.rpc("claim_job", { worker_id: "db-check(取得はしない)" });
   if (rpc.error && /function|does not exist/i.test(rpc.error.message)) {
     ng++;
-    needed.add("004_jobs.sql");
+    needed.add("supabase/schema.sql");
     console.log(`  NG  ${"claim_job()".padEnd(26)} 未作成`);
   } else {
     ok++;
@@ -97,7 +97,7 @@ async function main() {
   console.log(`\n  OK ${ok}件 / NG ${ng}件`);
   if (needed.size) {
     console.log(`\n  未適用のマイグレーション: ${[...needed].join(", ")}`);
-    console.log(`  対処: npm run db:migrate で出力されるSQLを Supabase の SQL Editor に貼って実行\n`);
+    console.log(`  対処: npm run db:push（DATABASE_URL未設定なら supabase/schema.sql を SQL Editor に貼って実行）\n`);
     process.exit(1);
   }
   console.log(`  すべて適用済みです。\n`);

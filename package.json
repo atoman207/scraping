@@ -15,13 +15,13 @@
     "scrape:search": "tsx scripts/scrape-search.ts",
     "scrape:seller": "tsx scripts/scrape-seller.ts",
     "scrape:sourcing": "tsx scripts/scrape-sourcing.ts",
-    "db:migrate": "tsx scripts/apply-migrations.ts",
     "test:cost": "tsx scripts/verify-cost.ts",
     "test:aggregate": "tsx scripts/verify-aggregate.ts",
     "worker": "tsx scripts/worker.ts",
     "db:stats": "tsx scripts/db-stats.ts",
     "db:check": "tsx scripts/db-check.ts",
-    "db:backup": "tsx scripts/db-backup.ts"
+    "db:backup": "tsx scripts/db-backup.ts",
+    "test:schema": "tsx scripts/verify-schema.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
