@@ -49,9 +49,10 @@ export async function POST(req: NextRequest) {
       .map((s) => s.trim())
       .filter(Boolean);
     const pages = clamp(Number(body.pages ?? 2), 1, 10);
-    const resolve = clamp(Number(body.resolve ?? 20), 1, 120);
+    const sellerLimit = clamp(Number(body.sellers ?? body.resolve ?? 60), 1, 200);
+    const includeUsed = Boolean(body.includeUsed);
     const job = createJob("search", `「${keyword}」のSOLD検索`);
-    void runSearch(job.id, keyword, aruaru, pages, resolve);
+    void runSearch(job.id, keyword, aruaru, pages, sellerLimit, includeUsed);
     return NextResponse.json({ jobId: job.id });
   }
 
@@ -94,43 +95,80 @@ function fail(jobId: string, e: unknown) {
   }
 }
 
-async function runSearch(jobId: string, keyword: string, aruaru: string[], pages: number, resolve: number) {
+async function runSearch(
+  jobId: string,
+  keyword: string,
+  aruaru: string[],
+  pages: number,
+  sellerLimit: number,
+  includeUsed: boolean
+) {
   const log = (m: string) => appendLog(jobId, m);
   const { MercariScraper } = await import("../../../lib/scraper/mercari");
-  const { createSearch, findSellerId, saveListings } = await import("../../../lib/scraper/persist");
-  const { run: rankSellers } = await import("../../../lib/engine/rank");
-  const scraper = new MercariScraper({ minIntervalMs: 2500, log });
+  const { createSearch, saveListings, saveSellerResults, upsertSellers } = await import("../../../lib/scraper/persist");
+  const { aggregateBySeller } = await import("../../../lib/engine/aggregate");
+  // ページ送りは5秒間隔。参考にした既存サービスの実測値に合わせている
+  const scraper = new MercariScraper({ minIntervalMs: 5000, log });
   try {
     await scraper.start();
     log(`検索を開始します: "${keyword}"${aruaru.length ? ` + [${aruaru.join(", ")}]` : ""}`);
-    const listings = await scraper.searchSold(keyword, aruaru, pages, { resolveSellerLimit: resolve });
+
+    const listings = await scraper.searchSold(keyword, aruaru, pages, {
+      includeUsed,
+      onPage: ({ query, page, pages: n, total }) => log(`  [${query}] ${page}/${n}ページ … 累計${total}件`),
+    });
     if (!listings.length) {
       log("該当する出品を取得できませんでした。");
       finishJob(jobId, { status: "done" });
       return;
     }
 
-    const profiles = new Map<string, ScrapedSeller>();
-    const uniqueSellers = [...new Set(listings.map((l) => l.seller_external_id))];
-    log(`セラープロフィールを取得します(${uniqueSellers.length}人)`);
-    for (const sid of uniqueSellers) {
-      try {
-        const p = await scraper.getSellerProfile(sid);
-        if (p) profiles.set(sid, p);
-      } catch (e) {
-        if (e instanceof BlockedError) throw e;
+    const stats = aggregateBySeller(
+      listings.map((l) => ({
+        seller_external_id: l.seller_external_id,
+        price: l.price,
+        listed_at: l.listed_at,
+        updated_at: l.updated_at,
+        is_new: l.is_new,
+        category_id: null,
+        matched_keyword: l.matched_keyword,
+      })),
+      { includeUsed }
+    );
+    log(`集計: 出品${listings.length}件 / セラー${stats.length}人`);
+
+    const top = stats.slice(0, sellerLimit);
+    log(`セラー名を取得します(上位${top.length}人)`);
+    const profiles = await scraper.resolveSellerNames(
+      top.map((s) => s.seller_external_id),
+      {
+        onProgress: (done, total) => {
+          if (done % 10 === 0 || done === total) log(`  ${done}/${total}人`);
+        },
       }
+    );
+    // 名前が取れなかったセラーもIDだけで登録する
+    for (const s of top) {
+      if (profiles.has(s.seller_external_id)) continue;
+      profiles.set(s.seller_external_id, {
+        platform: "mercari",
+        seller_external_id: s.seller_external_id,
+        seller_name: s.seller_external_id,
+        rating: null,
+        review_count: null,
+        profile_url: scraper.profileUrl(s.seller_external_id),
+      });
     }
 
+    const keep = new Set(top.map((s) => s.seller_external_id));
     const searchId = await createSearch(keyword, aruaru);
-    await saveListings(listings, profiles, log);
-
-    const ids: number[] = [];
-    for (const sid of uniqueSellers) {
-      const id = await findSellerId("mercari", sid);
-      if (id) ids.push(id);
-    }
-    await rankSellers(searchId, keyword, ids, log);
+    const sellerIds = await upsertSellers(profiles);
+    await saveListings(
+      listings.filter((l) => keep.has(l.seller_external_id)),
+      profiles,
+      log
+    );
+    await saveSellerResults(searchId, top, sellerIds, log);
     log("完了しました。");
     finishJob(jobId, { status: "done", resultHref: "/" });
   } catch (e) {

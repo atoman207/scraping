@@ -17,12 +17,24 @@
  */
 import { relativeJaToDate, ScraperSession, type ScraperOptions } from "./browser";
 import {
+  buildSearchUrl,
+  pageTokenOf,
+  parseSearchResponse,
+  parseShippingMethods,
+  type MercariSearchResponse,
+  type SearchItem,
+} from "./mercari-search";
+import {
   BlockedError,
   type ScrapedListing,
   type ScrapedSeller,
   type SellerDeepdiveAdapter,
   type SellerResearchAdapter,
 } from "./types";
+
+/** ページ自身が受け取るレスポンスを捕捉するときのキー */
+const CAPTURE_SEARCH = "search";
+const CAPTURE_SHIPPING = "shippingMethods";
 
 const ORIGIN = "https://jp.mercari.com";
 const CELL_SELECTOR = "li[data-testid='item-cell'] [role='img'][id]";
@@ -112,6 +124,8 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
   readonly platformName = PLATFORM;
   private session: ScraperSession;
   private log: (m: string) => void;
+  /** 配送方法マスタ(id→名前)。検索ページを開いたときに一緒に降ってくる */
+  private shippingMethods: Record<string, string> = {};
 
   constructor(private options: ScraperOptions = {}) {
     this.session = new ScraperSession(options);
@@ -129,109 +143,162 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
   /**
    * 発注仕様書 3-1: キーワードでSOLD商品を検索し、新しい順に maxPages 分取得する。
    *
-   * 検索結果の一覧には出品者情報が含まれていないため、セラーを確定するには
-   * 商品ページを個別に開く必要がある。全件開くとアクセス回数が跳ね上がるので、
-   * resolveSellerLimit 件(既定30件)だけ解決する。呼び出し側で調整可能。
+   * 取得のしかた:
+   *   検索結果ページを1ページずつ普通に開き、**ページ自身が描画のために受け取った
+   *   検索レスポンス** を読む(lib/scraper/mercari-search.ts 参照)。
+   *   このレスポンスには各商品の出品者IDが最初から入っているため、
+   *   **追加のアクセスを増やさずに全件の出品者が分かる**。
+   *   1ページ約110件なので、10ページで1キーワードあたり約1,100件になる。
+   *
+   *   出品者「名」は検索レスポンスに含まれないため、ここではIDのみを埋める。
+   *   名前は集計後に必要なセラーの分だけ resolveSellerNames() で解決する
+   *   (全件の名前を引くと無駄なアクセスが増えるため。参考にした既存サービスも
+   *    「巡回」と「セラー名の取得」を別フェーズに分けている)。
+   *
+   * @param keyword     検索キーワード
+   * @param aruaruWords 「あるあるワード」。指定すると keyword と組み合わせて個別に検索する
+   * @param maxPages    1クエリあたり読むページ数(目安10)
    */
   async searchSold(
     keyword: string,
     aruaruWords: string[] = [],
     maxPages = 10,
-    opts: { resolveSellerLimit?: number } = {}
-  ): Promise<(ScrapedListing & { matched_keyword: string })[]> {
-    const resolveLimit = opts.resolveSellerLimit ?? 30;
+    opts: {
+      /** 中古も対象に含めるか(既定false=新品、未使用のみ)。せどり用途で true にする */
+      includeUsed?: boolean;
+      /** ページを1枚読むごとに呼ばれる。進捗表示用 */
+      onPage?: (info: { query: string; page: number; pages: number; got: number; total: number }) => void;
+    } = {}
+  ): Promise<(ScrapedListing & { matched_keyword: string; is_new: boolean | null; updated_at: string | null })[]> {
+    const includeUsed = opts.includeUsed ?? false;
     // あるあるワードは絞り込み用。指定があればキーワードと組み合わせて個別に検索する
     const queries = aruaruWords.length ? aruaruWords.map((w) => `${keyword} ${w}`.trim()) : [keyword];
 
-    const collected = new Map<string, RawCell & { matched: string }>();
+    // ページ自身が受け取る検索レスポンスと配送方法マスタを捕捉する
+    this.session.captureJson(CAPTURE_SEARCH, /\/v2\/entities:search/);
+    this.session.captureJson(CAPTURE_SHIPPING, /datasets\/shipping_methods/);
+
+    const collected = new Map<string, SearchItem & { matched: string }>();
+
     for (const q of queries) {
+      let emptyPages = 0;
       for (let p = 0; p < maxPages; p++) {
-        const url =
-          `${ORIGIN}/search?keyword=${encodeURIComponent(q)}&status=sold_out` +
-          (p > 0 ? `&page_token=${encodeURIComponent(`v1:${p}`)}` : "");
+        const url = buildSearchUrl(q, pageTokenOf(p));
+        this.session.clearCaptured(CAPTURE_SEARCH);
         this.log(`  検索: "${q}" ${p + 1}/${maxPages}ページ目`);
-        await this.session.goto(url, 4000);
-        let cells = await this.session.harvestWhileScrolling<RawCell>(extractCells, {
-          maxScrolls: 16,
-          waitFor: CELL_SELECTOR,
-        });
-        if (cells.length === 0) {
-          // 描画が間に合っていないだけのことがあるので、一度だけ待ち直す
-          this.log(`  → 0件。描画待ちで再試行します`);
-          await this.session.currentPage.waitForTimeout(6000);
-          cells = await this.session.harvestWhileScrolling<RawCell>(extractCells, {
-            maxScrolls: 16,
-            waitFor: CELL_SELECTOR,
-          });
-        }
-        if (cells.length === 0) {
-          this.log(`  → 0件。これ以上ページがないと判断して打ち切ります`);
-          break;
-        }
-        let added = 0;
-        for (const c of cells) {
-          if (!collected.has(c.id)) {
-            collected.set(c.id, { ...c, matched: q });
-            added++;
+        await this.session.goto(url, 1500);
+
+        // 描画のためのレスポンスが届くまで待つ(固定sleepより確実)
+        const responses = await this.session.waitForCaptured<MercariSearchResponse>(CAPTURE_SEARCH, 25000);
+
+        // 配送方法マスタは初回だけ届く。届いたら覚えておく
+        for (const m of this.session.takeCaptured(CAPTURE_SHIPPING)) {
+          const table = parseShippingMethods(m);
+          if (Object.keys(table).length) {
+            this.shippingMethods = { ...this.shippingMethods, ...table };
+            this.log(`  配送方法マスタを取得(${Object.keys(table).length}種)`);
           }
         }
-        this.log(`  → ${cells.length}件取得(新規${added}件, 累計${collected.size}件)`);
-        if (added === 0) break; // 同じ内容が返り始めたら終端
+
+        if (!responses.length) {
+          // 検索レスポンスが取れない = 描画されていない or 仕様変更
+          emptyPages++;
+          this.log(`  → 検索結果を受け取れませんでした(${emptyPages}回目)`);
+          if (emptyPages >= 2) {
+            throw new Error(
+              `検索結果を取得できませんでした: "${q}" ${p + 1}ページ目。` +
+                `メルカリ側の仕様変更か、アクセスが制限されている可能性があります。`
+            );
+          }
+          continue;
+        }
+        emptyPages = 0;
+
+        let added = 0;
+        let pageCount = 0;
+        let skipped = 0;
+        let last: string | null = null;
+        for (const res of responses) {
+          const parsed = parseSearchResponse(res, this.shippingMethods);
+          pageCount += parsed.items.length;
+          skipped += parsed.skipped;
+          last = parsed.nextPageToken;
+          for (const it of parsed.items) {
+            if (!collected.has(it.external_id)) {
+              collected.set(it.external_id, { ...it, matched: q });
+              added++;
+            }
+          }
+        }
+        this.log(
+          `  → ${pageCount}件(新規${added}件, 累計${collected.size}件)` + (skipped ? ` ※形式不明で除外${skipped}件` : "")
+        );
+        opts.onPage?.({ query: q, page: p + 1, pages: maxPages, got: pageCount, total: collected.size });
+
+        // 次のページが無い/新規が増えないなら、そのクエリは終端
+        if (!last) {
+          this.log(`  → 最終ページに到達しました`);
+          break;
+        }
+        if (added === 0) {
+          this.log(`  → 新しい商品が出てこなくなったので打ち切ります`);
+          break;
+        }
       }
     }
 
-    // SOLD のものだけを対象にする(status=sold_out でも稀に混ざるため念のため絞る)
-    const sold = [...collected.values()].filter((c) => {
-      const p = parseAria(c.aria);
-      return p?.sold ?? c.sticker === "売り切れ";
-    });
-    this.log(`検索完了: ${collected.size}件中 SOLD ${sold.length}件`);
+    // SOLD(取引中を含む)のみを対象にする
+    const sold = [...collected.values()].filter((c) => c.sold);
+    this.log(`検索完了: ${collected.size}件中 売れた出品 ${sold.length}件 / セラー ${new Set(sold.map((s) => s.seller_external_id)).size}人`);
 
-    // 出品者を解決する(商品ページを開く必要があるので上位N件のみ)
-    const targets = sold.slice(0, resolveLimit);
-    this.log(`出品者の解決: 上位${targets.length}件の商品ページを開きます`);
+    return sold.map((c) => ({
+      platform: PLATFORM,
+      external_id: c.external_id,
+      seller_external_id: c.seller_external_id,
+      // 名前は検索レスポンスに無い。集計後に resolveSellerNames() で解決する
+      seller_name: c.seller_external_id,
+      title: c.title,
+      price: c.price,
+      status: "sold" as const,
+      listed_at: c.listed_at,
+      // 売却日時は公開されていないため取得不可(仕様書の想定どおり)
+      sold_at: null,
+      shipping_method: c.shipping_method,
+      shipping_cost: shippingCostFromMethod(c.shipping_method),
+      image_url: c.image_url,
+      listing_url: c.listing_url,
+      matched_keyword: c.matched,
+      is_new: c.is_new,
+      updated_at: c.updated_at,
+    }));
+  }
 
-    const results: (ScrapedListing & { matched_keyword: string })[] = [];
-    let failed = 0;
-    for (const [i, c] of targets.entries()) {
-      const parsed = parseAria(c.aria);
-      if (!parsed) {
-        failed++;
-        continue;
-      }
-      let detail: ItemDetail | null = null;
+  /**
+   * セラーIDの一覧から名前を解決する。
+   *
+   * 検索レスポンスには出品者名が入っていないため、必要なセラーの分だけ
+   * プロフィールページを開いて名前を取る。集計して上位N人に絞ってから呼ぶこと。
+   * 1人ずつレート制限がかかるので、100人を超えると相応の時間がかかる。
+   */
+  async resolveSellerNames(
+    sellerIds: string[],
+    opts: { onProgress?: (done: number, total: number, name: string) => void } = {}
+  ): Promise<Map<string, ScrapedSeller>> {
+    const out = new Map<string, ScrapedSeller>();
+    const ids = [...new Set(sellerIds)];
+    this.log(`セラー名の取得: ${ids.length}人`);
+    for (const [i, sid] of ids.entries()) {
       try {
-        detail = await this.getItemDetail(c.id);
+        const prof = await this.getSellerProfile(sid);
+        if (prof) out.set(sid, prof);
+        opts.onProgress?.(i + 1, ids.length, prof?.seller_name ?? sid);
       } catch (e) {
         if (e instanceof BlockedError) throw e;
-        failed++;
-        this.log(`  [${i + 1}/${targets.length}] ${c.id} 取得失敗: ${String(e).slice(0, 90)}`);
-        continue;
+        this.log(`  ${sid} の名前が取れませんでした: ${String(e).slice(0, 80)}`);
       }
-      if (!detail?.seller_external_id) {
-        failed++;
-        continue;
-      }
-      results.push({
-        platform: PLATFORM,
-        external_id: c.id,
-        seller_external_id: detail.seller_external_id,
-        seller_name: detail.seller_name ?? detail.seller_external_id,
-        title: parsed.title,
-        price: parsed.price,
-        status: "sold",
-        listed_at: detail.listed_at,
-        sold_at: null, // 公開ページに売却日時は出ないため取得不可
-        shipping_method: detail.shipping_method,
-        shipping_cost: detail.shipping_cost,
-        image_url: c.img,
-        listing_url: itemUrl(c.id),
-        matched_keyword: c.matched,
-      });
-      if ((i + 1) % 5 === 0) this.log(`  [${i + 1}/${targets.length}] 解決済み ${results.length}件`);
     }
-    this.log(`出品者の解決: 成功${results.length}件 / 失敗${failed}件`);
-    return results;
+    this.log(`セラー名の取得: ${out.size}/${ids.length}人`);
+    return out;
   }
 
   // ---------------------------------------------------------------- 3-2
@@ -243,9 +310,14 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
     this.log(`セラー ${sellerExternalId} (${sellerName}) の出品一覧を取得します(最大${maxItems}件)`);
     await this.session.goto(this.profileUrl(sellerExternalId));
     const cells = await this.session.harvestWhileScrolling<RawCell>(extractCells, {
-      maxScrolls: Math.max(20, Math.ceil(maxItems / 4)),
+      // セラーページは初期表示30件ほどで止まり、「もっと見る」を押すと続きが出る
+      maxScrolls: Math.max(40, Math.ceil(maxItems / 2)),
       stopAfter: maxItems,
       waitFor: CELL_SELECTOR,
+      loadMoreText: ["もっと見る", "さらに表示"],
+      onProgress: (n) => {
+        if (n % 25 === 0) this.log(`    … ${n}件`);
+      },
     });
     this.log(`  → ${cells.length}件の出品を取得`);
 
@@ -284,7 +356,12 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
   /** セラーのプロフィール(名前・評価数)を取得 */
   async getSellerProfile(sellerExternalId: string): Promise<ScrapedSeller | null> {
     const url = this.profileUrl(sellerExternalId);
-    const page = await this.session.goto(url);
+    await this.session.goto(url);
+    // 名前が描画されるまで待つ。固定待ちだと、まだ出ていないパンくず(「ホーム」)を
+    // 名前と誤認することがあるため。
+    await this.session.waitForAny("h1", 12000);
+    const page = this.session.currentPage;
+
     const info = await page.evaluate(() => {
       const text = document.body.innerText;
       // 「101」のような評価数は名前のすぐ下、「本人確認済」の手前に出る
@@ -292,25 +369,54 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
       const listingCount = text.match(/(\d[\d,]*)\s*出品数/);
       return {
         title: document.title,
+        h1: document.querySelector("h1")?.textContent?.trim() ?? null,
         head: text.slice(0, 300),
         ratingCount: ratingCount ? ratingCount[1] : null,
         listingCount: listingCount ? listingCount[1] : null,
       };
     });
 
-    // ページタイトルが「<名前>さんのプロフィール | メルカリ」形式なのでそこから取る
+    // 共通ナビやパンくずの文言。これらは絶対にセラー名ではない
+    const NAV = [
+      "コンテンツにスキップ",
+      "ログイン",
+      "会員登録",
+      "出品",
+      "日本語",
+      "プロフィール",
+      "ホーム",
+      "メルカリShops",
+      "メルカリ",
+    ];
+    // ページによって「しずく の出品した商品」「しずくさんのプロフィール」など
+    // 名前に定型の接尾辞が付くので落とす
+    const stripSuffix = (t: string) =>
+      t
+        .replace(/\s*の出品した商品\s*$/, "")
+        .replace(/\s*さんのプロフィール\s*$/, "")
+        .replace(/\s*のプロフィール\s*$/, "")
+        .trim();
+
+    const clean = (v: string | null | undefined) => {
+      const t = stripSuffix((v ?? "").trim());
+      return t && !NAV.includes(t) && !/^\d[\d,]*$/.test(t) ? t : null;
+    };
+
+    // ① タイトル: 通常出品は「<名前>さんのプロフィール」、Shopsは「<店名> - メルカリShops」
     const fromTitle =
-      info.title.match(/^(.+?)さんのプロフィール/)?.[1]?.trim() ??
-      info.title.match(/^(.+?)s*[|-]s*メルカリ/)?.[1]?.trim() ??
-      null;
-    // フォールバック: 本文先頭の、共通ナビ以外の最初の行
-    const NAV = ["コンテンツにスキップ", "ログイン", "会員登録", "出品", "日本語", "プロフィール"];
-    const firstLine = info.head
+      clean(info.title.match(/^(.+?)さんのプロフィール/)?.[1]) ??
+      clean(info.title.match(/^(.+?)\s*[-|｜]\s*メルカリ/)?.[1]);
+    // ② h1: メルカリShopsのプロフィールは h1 が店名そのもの
+    const fromH1 = clean(info.h1);
+    // ③ 最後の手段として本文先頭の行
+    const fromBody = info.head
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean)
-      .find((s) => !NAV.includes(s) && !/^\d[\d,]*$/.test(s));
-    const name = fromTitle || firstLine || null;
+      .map(clean)
+      .find(Boolean);
+
+    const name = fromTitle ?? fromH1 ?? fromBody ?? null;
     if (!name) {
       this.log(`  セラー ${sellerExternalId}: 名前を取得できませんでした`);
       return null;

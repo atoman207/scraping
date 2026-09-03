@@ -14,7 +14,11 @@
     "test:engine": "tsx scripts/verify-engine.ts",
     "scrape:search": "tsx scripts/scrape-search.ts",
     "scrape:seller": "tsx scripts/scrape-seller.ts",
-    "scrape:sourcing": "tsx scripts/scrape-sourcing.ts"
+    "scrape:sourcing": "tsx scripts/scrape-sourcing.ts",
+    "db:migrate": "tsx scripts/apply-migrations.ts",
+    "test:cost": "tsx scripts/verify-cost.ts",
+    "test:aggregate": "tsx scripts/verify-aggregate.ts",
+    "worker": "tsx scripts/worker.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

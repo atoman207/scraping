@@ -5,3 +5,14 @@ node_modules
 *.log
 data/deepdive_report.csv
 tsconfig.tsbuildinfo
+
+# Seller Scope 調査の出力（セッションCookie・先方のコードを含むため除外）
+sellerscope-out/
+
+# 調査用の使い捨てスクリプトと出力
+_probe_*.mjs
+_probe-mercari-out/
+_sellerscope*.mjs
+supabase/_migrations-merged.sql
+SELLERSCOPE_ANALYSIS.md
+SellerScope調査を開始.cmd

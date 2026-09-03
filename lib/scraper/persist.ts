@@ -77,20 +77,35 @@ export async function saveListings(
 
   if (!listings.length) return { sellers: sellerIds.size, inserted: 0, skipped: 0 };
 
-  const rows = listings.map((l) => ({
-    seller_id: sellerIds.get(l.seller_external_id)!,
-    platform: l.platform,
-    external_id: l.external_id,
-    title: l.title,
-    price: l.price,
-    status: l.status,
-    listed_at: l.listed_at ?? null,
-    sold_at: l.sold_at ?? null,
-    shipping_method: l.shipping_method ?? null,
-    shipping_cost: l.shipping_cost ?? null,
-    image_url: l.image_url ?? null,
-    listing_url: l.listing_url ?? null,
-  }));
+  const rows = listings.map((l) => {
+    // 検索経由で取れる追加情報(migrations/003 で追加した列)。無ければ null のまま
+    const ext = l as ScrapedListing & {
+      is_new?: boolean | null;
+      updated_at?: string | null;
+      shipping_method_id?: string | null;
+      is_shops?: boolean;
+      matched_keyword?: string;
+    };
+    return {
+      seller_id: sellerIds.get(l.seller_external_id)!,
+      platform: l.platform,
+      external_id: l.external_id,
+      title: l.title,
+      price: l.price,
+      status: l.status,
+      listed_at: l.listed_at ?? null,
+      sold_at: l.sold_at ?? null,
+      shipping_method: l.shipping_method ?? null,
+      shipping_cost: l.shipping_cost ?? null,
+      image_url: l.image_url ?? null,
+      listing_url: l.listing_url ?? null,
+      is_new: ext.is_new ?? null,
+      updated_at: ext.updated_at ?? null,
+      shipping_method_id: ext.shipping_method_id ?? null,
+      is_shops: ext.is_shops ?? false,
+      matched_keyword: ext.matched_keyword ?? null,
+    };
+  });
 
   // 100件ずつに分けて投入(1リクエストが大きくなりすぎないように)
   let inserted = 0;
@@ -137,4 +152,80 @@ export async function findSellerId(platform: string, externalId: string): Promis
       .maybeSingle()
   ) as { id: number } | null;
   return row?.id ?? null;
+}
+
+// ---- 3-1 セラーリサーチ: 集計結果の保存 ----
+
+/**
+ * 集計済みのセラー指標を seller_research_results に書き込む。
+ *
+ * 従来は「listings をDBに入れてから読み直して集計」していたが、
+ * 回転日数と新品率は検索時にしか取れない情報なので、集計をメモリ上で
+ * 済ませてからここで一括保存する(lib/engine/aggregate.ts 参照)。
+ */
+export async function saveSellerResults(
+  searchId: number,
+  stats: {
+    seller_external_id: string;
+    total_sold: number;
+    avg_price: number;
+    turnover_days: number | null;
+    new_item_rate: number | null;
+    genre_count: number;
+    matched_keywords: string[];
+    seller_type: string;
+  }[],
+  sellerIds: Map<string, number>,
+  log: (m: string) => void = () => {}
+): Promise<number> {
+  const rows = stats
+    .map((s) => {
+      const id = sellerIds.get(s.seller_external_id);
+      if (!id) return null;
+      return {
+        search_id: searchId,
+        seller_id: id,
+        total_sold: s.total_sold,
+        avg_price: s.avg_price,
+        turnover_days: s.turnover_days,
+        new_item_rate: s.new_item_rate,
+        genre_count: s.genre_count,
+        seller_type: s.seller_type,
+        matched_keyword: s.matched_keywords.join("、") || null,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100);
+    const res = must(
+      await getSupabase()
+        .from("seller_research_results")
+        .upsert(chunk, { onConflict: "search_id,seller_id,matched_keyword" })
+        .select("id")
+    ) as { id: number }[] | null;
+    saved += res?.length ?? 0;
+  }
+  log(`セラー集計: ${saved}件を保存`);
+  return saved;
+}
+
+/** セラーIDの一覧をまとめて登録し、外部ID→内部IDの対応表を返す */
+export async function upsertSellers(
+  profiles: Map<string, ScrapedSeller>,
+  fallbackPlatform = "mercari"
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  for (const [sid, p] of profiles) {
+    out.set(sid, await upsertSeller(p ?? {
+      platform: fallbackPlatform,
+      seller_external_id: sid,
+      seller_name: sid,
+      rating: null,
+      review_count: null,
+      profile_url: null,
+    }));
+  }
+  return out;
 }
