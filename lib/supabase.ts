@@ -51,8 +51,44 @@ export function getSupabase(): SupabaseClient {
 /** 元の getDb() と同じ役割(DBハンドルを返す)。名前は互換のために残している。 */
 export const getDb = getSupabase;
 
-/** supabase-jsのエラーをそのまま例外にして、画面のエラーボックスに出す */
+/**
+ * supabase-jsのエラーを例外にして、画面のエラーボックスやワーカーのログに出す。
+ *
+ * 「列が無い」「テーブルが無い」はマイグレーションの当て忘れが原因なので、
+ * 何をすればよいかまで書き添える。原文だけだと
+ * "Could not find the 'is_new' column of 'listings' in the schema cache" となり、
+ * 何をすれば直るのか分からないため。
+ */
 export function must<T>(res: { data: T | null; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
+  if (res.error) throw new Error(explain(res.error.message));
   return res.data as T;
+}
+
+/** PostgRESTのエラー文に、対処方法を付け足す */
+export function explain(message: string): string {
+  const missingColumn = message.match(/Could not find the '([^']+)' column of '([^']+)'/);
+  if (missingColumn) {
+    return (
+      `${message}\n` +
+      `  → DBのマイグレーションが未適用です(${missingColumn[2]}.${missingColumn[1]} がありません)。\n` +
+      `     npm run db:check  で状況を確認し、npm run db:migrate で出力されるSQLを\n` +
+      `     Supabase の SQL Editor に貼って実行してください。`
+    );
+  }
+  const missingTable = message.match(/Could not find the table '([^']+)'/);
+  if (missingTable) {
+    return (
+      `${message}\n` +
+      `  → テーブル ${missingTable[1]} がありません。npm run db:migrate で出力されるSQLを\n` +
+      `     Supabase の SQL Editor に貼って実行してください。`
+    );
+  }
+  if (/Could not find the function public\.(claim_job|queue_ahead)/.test(message)) {
+    return (
+      `${message}\n` +
+      `  → ジョブキューの関数が未作成です。supabase/migrations/004_jobs.sql を\n` +
+      `     Supabase の SQL Editor で実行してください。`
+    );
+  }
+  return message;
 }

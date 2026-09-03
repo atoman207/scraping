@@ -16,3 +16,7 @@ _sellerscope*.mjs
 supabase/_migrations-merged.sql
 SELLERSCOPE_ANALYSIS.md
 SellerScope調査を開始.cmd
+
+# バックアップ(データ本体なのでリポジトリには入れない)
+backups/
+ops/backup.log

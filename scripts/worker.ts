@@ -23,8 +23,17 @@ import { aggregateBySeller } from "../lib/engine/aggregate";
 import { BlockedError } from "../lib/scraper/types";
 
 const WORKER_ID = `${os.hostname()}-${process.pid}`;
-/** ジョブが無いときの待ち時間 */
-const IDLE_WAIT_MS = 5000;
+/**
+ * ジョブが無いときの待ち時間。
+ *
+ * ずっと5秒間隔で問い合わせると1日17,000回になり、DBがネットワーク越し(Supabase)だと
+ * 転送量を無駄に使う。何も無い状態が続いたら少しずつ間隔を広げ、
+ * ジョブを拾ったら最短に戻す。上限を1分に抑えているのは、
+ * Supabase無料枠の「7日間アクセスが無いと自動停止」を確実に避けるため。
+ */
+const IDLE_MIN_MS = 5000;
+const IDLE_MAX_MS = 60000;
+let idleWaitMs = IDLE_MIN_MS;
 /** ページ送りの間隔。短くするとブロックされやすくなる */
 const PAGE_INTERVAL_MS = Number(process.env.SCRAPE_INTERVAL_MS ?? 5000);
 /** ブロックされたあとの冷却時間 */
@@ -203,10 +212,13 @@ async function main() {
         stamp("待機中(ジョブなし)");
         idleLogged = true;
       }
-      await sleep(IDLE_WAIT_MS);
+      await sleep(idleWaitMs);
+      // 何も無い状態が続くほど間隔を広げる(最大1分)
+      idleWaitMs = Math.min(Math.round(idleWaitMs * 1.5), IDLE_MAX_MS);
       continue;
     }
     idleLogged = false;
+    idleWaitMs = IDLE_MIN_MS; // ジョブが来たら最短に戻す
     await handle(job);
   }
   stamp("停止しました。");

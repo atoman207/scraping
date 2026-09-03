@@ -56,23 +56,26 @@ export async function saveListings(
   log: (m: string) => void = () => {}
 ): Promise<SaveResult> {
   const sb = getSupabase();
-  const sellerIds = new Map<string, number>();
 
-  // セラーを先にまとめて登録
+  // セラーを先にまとめて登録する(1人ずつだと出品数ぶん往復してしまう)
+  const wanted = new Map<string, ScrapedSeller>();
   for (const l of listings) {
-    if (sellerIds.has(l.seller_external_id)) continue;
-    const profile = profiles.get(l.seller_external_id) ?? {
-      platform: l.platform,
-      seller_external_id: l.seller_external_id,
-      seller_name: l.seller_name,
-      rating: null,
-      review_count: null,
-      profile_url: l.seller_external_id.startsWith("shops:")
-        ? `https://jp.mercari.com/shops/profile/${l.seller_external_id.slice(6)}`
-        : `https://jp.mercari.com/user/profile/${l.seller_external_id}`,
-    };
-    sellerIds.set(l.seller_external_id, await upsertSeller(profile));
+    if (wanted.has(l.seller_external_id)) continue;
+    wanted.set(
+      l.seller_external_id,
+      profiles.get(l.seller_external_id) ?? {
+        platform: l.platform,
+        seller_external_id: l.seller_external_id,
+        seller_name: l.seller_name,
+        rating: null,
+        review_count: null,
+        profile_url: l.seller_external_id.startsWith("shops:")
+          ? `https://jp.mercari.com/shops/profile/${l.seller_external_id.slice(6)}`
+          : `https://jp.mercari.com/user/profile/${l.seller_external_id}`,
+      }
+    );
   }
+  const sellerIds = await upsertSellers(wanted);
   log(`セラー: ${sellerIds.size}件を登録/更新`);
 
   if (!listings.length) return { sellers: sellerIds.size, inserted: 0, skipped: 0 };
@@ -211,21 +214,54 @@ export async function saveSellerResults(
   return saved;
 }
 
-/** セラーIDの一覧をまとめて登録し、外部ID→内部IDの対応表を返す */
+/**
+ * セラーをまとめて登録し、外部ID→内部IDの対応表を返す。
+ *
+ * 1人ずつ upsertSeller() を呼ぶと「検索して無ければ作る」で1人あたり2往復かかる。
+ * VPSからSupabase(ネットワーク越し)に60人ぶん投げると120往復になり、
+ * 1往復50msでも6秒かかる。ここは1回のupsertと1回のselectで済ませる。
+ */
 export async function upsertSellers(
   profiles: Map<string, ScrapedSeller>,
   fallbackPlatform = "mercari"
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
-  for (const [sid, p] of profiles) {
-    out.set(sid, await upsertSeller(p ?? {
-      platform: fallbackPlatform,
-      seller_external_id: sid,
-      seller_name: sid,
-      rating: null,
-      review_count: null,
-      profile_url: null,
-    }));
+  if (!profiles.size) return out;
+
+  const rows = [...profiles].map(([sid, p]) => ({
+    platform: p?.platform ?? fallbackPlatform,
+    seller_external_id: sid,
+    seller_name: p?.seller_name ?? sid,
+    rating: p?.rating ?? null,
+    review_count: p?.review_count ?? null,
+    profile_url: p?.profile_url ?? null,
+  }));
+
+  const sb = getSupabase();
+  // (platform, seller_external_id) の一意制約で既存行は更新される
+  for (let i = 0; i < rows.length; i += 200) {
+    must(
+      await sb
+        .from("sellers")
+        .upsert(rows.slice(i, i + 200), { onConflict: "platform,seller_external_id" })
+        .select("id")
+    );
+  }
+
+  // 採番された内部IDを引き直す(upsertの戻り順は保証されないためIDで引く)
+  const platforms = [...new Set(rows.map((r) => r.platform))];
+  for (const platform of platforms) {
+    const ids = rows.filter((r) => r.platform === platform).map((r) => r.seller_external_id);
+    for (let i = 0; i < ids.length; i += 200) {
+      const found = (must(
+        await sb
+          .from("sellers")
+          .select("id, seller_external_id")
+          .eq("platform", platform)
+          .in("seller_external_id", ids.slice(i, i + 200))
+      ) ?? []) as { id: number; seller_external_id: string }[];
+      for (const f of found) out.set(f.seller_external_id, f.id);
+    }
   }
   return out;
 }

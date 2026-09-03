@@ -18,7 +18,10 @@
     "db:migrate": "tsx scripts/apply-migrations.ts",
     "test:cost": "tsx scripts/verify-cost.ts",
     "test:aggregate": "tsx scripts/verify-aggregate.ts",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "db:stats": "tsx scripts/db-stats.ts",
+    "db:check": "tsx scripts/db-check.ts",
+    "db:backup": "tsx scripts/db-backup.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
