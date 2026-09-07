@@ -11,6 +11,7 @@ import {
 } from "../../../lib/db";
 import Avatar from "../../Avatar";
 import MigrationNotice from "../../MigrationNotice";
+import RevealList from "../../RevealList";
 import ScrapeRunner from "../../ScrapeRunner";
 import {
   IconAlert,
@@ -314,6 +315,8 @@ export default async function SellerDeepdivePage({
       )}
 
       <div className="stack">
+        {/* 最初は10件だけ。「もっと見る」で10件ずつ増やす */}
+        <RevealList step={10} unit="件">
         {groups.map((g) => {
           const saved = savedGroupIds.has(g.id);
           const ship = shipLabel(g);
@@ -331,7 +334,19 @@ export default async function SellerDeepdivePage({
               <div className="group-head">
                 <div style={{ display: "flex", gap: 12, minWidth: 0 }}>
                   {g.representative_image_url ? (
-                    <img className="thumb" src={g.representative_image_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                    g.representative_listing_url ? (
+                      <a
+                        className="thumb-link"
+                        href={g.representative_listing_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="メルカリの商品ページを開く"
+                      >
+                        <img className="thumb" src={g.representative_image_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                      </a>
+                    ) : (
+                      <img className="thumb" src={g.representative_image_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                    )
                   ) : (
                     <div className="thumb" />
                   )}
@@ -477,6 +492,7 @@ export default async function SellerDeepdivePage({
             </div>
           );
         })}
+        </RevealList>
 
         {groups.length === 0 && !error && (
           <div className="empty">

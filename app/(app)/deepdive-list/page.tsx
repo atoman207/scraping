@@ -456,12 +456,37 @@ export default async function DeepdiveListPage() {
             <div key={item.deepdive_id} className="card card-pad">
               <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
                 {item.representative_image_url ? (
-                  <img className="thumb" src={item.representative_image_url} alt="" />
+                  item.representative_listing_url ? (
+                    <a
+                      className="thumb-link"
+                      href={item.representative_listing_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="メルカリの商品ページを開く"
+                    >
+                      <img className="thumb" src={item.representative_image_url} alt="" />
+                    </a>
+                  ) : (
+                    <img className="thumb" src={item.representative_image_url} alt="" />
+                  )
                 ) : (
                   <div className="thumb" />
                 )}
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="item-title">{item.representative_title}</div>
+                  <div className="item-title">
+                    {item.representative_listing_url ? (
+                      <a
+                        href={item.representative_listing_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "inherit", textDecoration: "none" }}
+                      >
+                        {item.representative_title}
+                      </a>
+                    ) : (
+                      item.representative_title
+                    )}
+                  </div>
                   <div className="meta">
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <IconTag size={12} />

@@ -185,6 +185,16 @@ export default function ScrapeRunner({
     return Math.round(((idx + within) / phases.length) * 100);
   }, [job?.progress, phases]);
 
+  /**
+   * 実行が終わったか(成功・失敗どちらも)。
+   *
+   * finishJob() は完了時に progress を undefined にするため、そのままだと
+   * percent が null に戻り、「総量不明」用のCSS(width:35% !important)が
+   * **完了後に効いてしまう**。インラインの width:100% は !important に負けるので、
+   * クラスの側で切り替える必要がある。
+   */
+  const finished = job?.status === "done" || job?.status === "error";
+
   const elapsed = startedAt ? fmtElapsed(now - startedAt) : null;
   const canRun = !running && (env === null || env.available);
 
@@ -365,10 +375,11 @@ export default function ScrapeRunner({
           </div>
 
           {/* 進捗バー: 総量が分かるときは値を、分からないときは往復させる */}
-          <div className={percent === null ? "progress progress-indeterminate" : "progress"}>
+          <div className={!finished && percent === null ? "progress progress-indeterminate" : "progress"}>
             <div
               className="progress-bar"
-              style={{ width: `${job?.status === "done" ? 100 : (percent ?? 35)}%` }}
+              data-state={job?.status}
+              style={{ width: `${finished ? 100 : (percent ?? 35)}%` }}
             />
           </div>
 

@@ -23,6 +23,7 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "test:schema": "tsx scripts/verify-schema.ts",
     "test:browser": "tsx scripts/verify-browser.ts",
+    "test:retry": "tsx scripts/verify-db-retry.ts",
     "verify:3-1": "tsx scripts/verify-3-1.ts",
     "verify:3-2": "tsx scripts/verify-3-2.ts",
     "test:3-2": "tsx scripts/verify-3-2-parse.ts",

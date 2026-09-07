@@ -41,6 +41,20 @@ export const IconSearch = (p: P) => (
   </Base>
 );
 
+/** 上向きの山かっこ: 小さい順に並べ替え */
+export const IconChevronUp = (p: P) => (
+  <Base {...p}>
+    <path d="m6 15 6-6 6 6" />
+  </Base>
+);
+
+/** 下向きの山かっこ: 続きを開く */
+export const IconChevronDown = (p: P) => (
+  <Base {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Base>
+);
+
 /** 人が2人: セラー(①セラーリサーチ) */
 export const IconUsers = (p: P) => (
   <Base {...p}>

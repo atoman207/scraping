@@ -333,6 +333,12 @@ export type DeepdiveRowV2 = {
   product_group_id: number;
   representative_title: string;
   representative_image_url: string | null;
+  /**
+   * 代表商品のメルカリURL。サムネイルとタイトルのリンク先に使う。
+   * deepdive_view にこの列を足す前のDBでは undefined で返るため、任意項目にしてある
+   * (画面側はその場合リンク無しで表示する)。
+   */
+  representative_listing_url?: string | null;
   sold_count: number;
   listing_count: number;
   mercari_avg_price: number | null;

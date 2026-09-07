@@ -435,6 +435,27 @@ table.data tbody tr:hover {
   background: var(--surface-2);
   flex-shrink: 0;
 }
+
+/* サムネイルをメルカリの商品ページへのリンクにしたときの見た目。
+   押せることが分かるよう、カーソルと明るさだけ変える(大きさは動かさない。
+   一覧の行がガタつくため)。 */
+.thumb-link {
+  display: block;
+  flex-shrink: 0;
+  line-height: 0;
+  border-radius: var(--r);
+}
+.thumb-link .thumb {
+  transition: filter 0.15s ease, border-color 0.15s ease;
+}
+.thumb-link:hover .thumb {
+  filter: brightness(1.06);
+  border-color: var(--brand);
+}
+.thumb-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
 .meta {
   font-size: 12px;
   color: var(--text-muted);
@@ -724,6 +745,17 @@ tr[data-ng="true"] .name {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
 }
+/* 終わったら、バーの中を流れる光を止める。
+   動いたままだと、100%まで伸びていても「まだ処理中」に見えるため。 */
+.progress-bar[data-state="done"]::after,
+.progress-bar[data-state="error"]::after {
+  content: none;
+}
+/* 失敗して終わったときは、満ちていても成功と区別できるようにする */
+.progress-bar[data-state="error"] {
+  background: var(--red);
+}
+
 /* 総量が分からないとき(起動直後など)は往復させる */
 .progress-indeterminate .progress-bar {
   width: 35% !important;
@@ -1546,4 +1578,74 @@ code {
 }
 .cand-group-head svg {
   color: var(--text-faint);
+}
+
+
+/* 表の下に出る「もっと見る」。行として置いているので、
+   区切り線を消して中央に寄せ、行のホバー色も付かないようにする。 */
+.reveal-row td {
+  text-align: center;
+  padding: 10px 12px;
+  border-bottom: none;
+  background: var(--surface);
+}
+.reveal-row:hover td {
+  background: var(--surface);
+}
+.reveal-rest {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  margin-left: 2px;
+}
+
+
+/* 見出しの並べ替えボタン。
+   ▲▼を縦に重ねて置き、押されている向きだけ色を付ける。
+   見出しの高さを変えないよう、行の高さは詰めてある。 */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.th-sort[data-right] {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+.sort-btns {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.sort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  line-height: 0;
+  border-radius: 2px;
+}
+.sort-btn:hover {
+  color: var(--text);
+}
+.sort-btn[data-active] {
+  color: var(--brand);
+}
+.sort-btn:focus-visible {
+  outline: 1px solid var(--brand);
+  outline-offset: 1px;
+}
+
+
+/* カード一覧の下に置く「もっと見る」。表の中(.reveal-row)と違い、
+   ボタンを中央に置くだけでよい。 */
+.reveal-more {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
 }

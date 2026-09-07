@@ -395,6 +395,7 @@ SELECT
   di.product_group_id,
   pg.representative_title,
   pg.representative_image_url,
+  pg.representative_listing_url,   -- サムネイル/タイトルのリンク先(メルカリ商品ページ)
   pg.sold_count,
   pg.listing_count,
   pg.avg_price AS mercari_avg_price,

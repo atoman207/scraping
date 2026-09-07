@@ -8,6 +8,7 @@ import {
   type Settings,
 } from "../../lib/db";
 import Avatar from "../Avatar";
+import SellerTable, { type SellerSortKeys } from "../SellerTable";
 import MigrationNotice from "../MigrationNotice";
 import ScrapeRunner from "../ScrapeRunner";
 import {
@@ -53,6 +54,20 @@ async function getLatestSearchResults(): Promise<{
  * セラー分類の見せ方。
  * 「専門特化(穴場候補)」は探している当のものなので、いちばん目立つ色にする。
  */
+/**
+ * 分類を並べ替えるための格付け。
+ *
+ * 文字列のまま並べると「小規模」「中堅」「専門」が五十音順になってしまい、
+ * 有望さの順にならない。画面のバッジ(sellerTypePill)と同じ判定で数値にする。
+ */
+function sellerTypeRank(type: string | null): number | null {
+  if (!type) return null;
+  if (type.includes("穴場")) return 3;
+  if (type.includes("特化")) return 2;
+  if (type.includes("複数")) return 1;
+  return 0;
+}
+
 function sellerTypePill(type: string | null): { cls: string; label: string } | null {
   if (!type) return null;
   if (type.includes("穴場")) return { cls: "pill-hot", label: type };
@@ -84,6 +99,15 @@ export default async function SellerResearchPage() {
   const ngNewRate = settings?.ng_new_item_rate_threshold ?? 80;
   const ngTurnover = settings?.ng_turnover_days_threshold ?? 14;
 
+  // 並べ替えに使う値。行と同じ並びで SellerTable へ渡す
+  const sortKeys: SellerSortKeys[] = rows.map((r) => ({
+    type: sellerTypeRank(r.seller_type),
+    rating: r.review_count,
+    sold: r.total_sold,
+    price: r.avg_price,
+    turnover: r.turnover_days,
+    newRate: r.new_item_rate,
+  }));
   const totalSold = rows.reduce((a, r) => a + r.total_sold, 0);
   const hotCount = rows.filter((r) => r.seller_type?.includes("穴場")).length;
   const okRows = rows.filter(
@@ -174,20 +198,9 @@ export default async function SellerResearchPage() {
       {rows.length > 0 ? (
         <div className="table-wrap fade-up">
           <div className="table-scroll">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>セラー</th>
-                  <th className="tight">分類</th>
-                  <th className="tight right">評価</th>
-                  <th className="tight right">総SOLD</th>
-                  <th className="tight right">平均価格</th>
-                  <th className="tight right">回転日数</th>
-                  <th className="tight right">新品率</th>
-                  <th className="tight"></th>
-                </tr>
-              </thead>
-              <tbody>
+            {/* 見出しの並べ替えと「もっと見る」は SellerTable が持つ。
+                行の中身はここ(サーバー側)で作り、並べ替えに使う値だけ keys で渡す */}
+            <SellerTable step={5} keys={sortKeys}>
                 {rows.map((r) => {
                   const slowRotation = r.turnover_days !== null && r.turnover_days > ngTurnover;
                   const lowNew = r.new_item_rate !== null && r.new_item_rate < ngNewRate;
@@ -279,8 +292,7 @@ export default async function SellerResearchPage() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
+            </SellerTable>
           </div>
         </div>
       ) : (
