@@ -1,18 +1,30 @@
 "use client";
 
 /**
- * スクレイパーを画面から起動し、進捗ログをポーリングして表示するパネル。
+ * スクレイパーを画面から起動し、進捗をポーリングして表示するパネル。
  * 実行そのものは /api/scrape がサーバー側で行う。
+ *
+ * 待ち時間の扱い:
+ *   メルカリへのアクセスは1回2.5〜5秒の間隔を空けるので、検索は数十秒〜数分かかる。
+ *   その間ずっと「実行中…」だけだと、止まっているのか進んでいるのか分からない。
+ *   そこで **段階(どこまで来たか)・進捗バー・経過時間・流れるログ** の4つを出す。
+ *   どれもサーバーが返す構造化された進捗(lib/jobs.ts の JobProgress)に基づいていて、
+ *   実態の無いアニメーションで進んでいるように見せてはいない。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconAlert, IconCheck, IconLoader, IconSearch } from "./icons";
+import { IconAlert, IconCheck, IconLoader, IconRefresh, IconSearch } from "./icons";
+
+type Phase = "crawl" | "names" | "list" | "ship" | "aggregate" | "save" | "cluster" | "title" | "image";
+
+type Progress = { phase: Phase; done?: number; total?: number; label?: string };
 
 type Job = {
   id: string;
   label: string;
   status: "running" | "done" | "error";
   log: string[];
+  progress?: Progress;
   error?: string;
   resultHref?: string;
 };
@@ -25,16 +37,47 @@ type Props = {
   buttonLabel: string;
   /** 検索フォーム(kind=search)を出すか */
   withSearchForm?: boolean;
+  /** 取得の深さ(標準3件 / 詳細20件)を選ばせるか(kind=seller) */
+  withDepthChoice?: boolean;
+  /** 探し方(タイトル検索 / 画像検索)を選ばせるか(kind=sourcing) */
+  withSourcingOptions?: boolean;
   title: string;
   description?: string;
   compact?: boolean;
 };
+
+/** 段階の見出し。順番はそのまま画面の並び順になる */
+const PHASE_LABEL: Record<Phase, string> = {
+  crawl: "検索結果を読む",
+  names: "セラー名を調べる",
+  list: "出品を読む",
+  ship: "実送料を調べる",
+  aggregate: "集計する",
+  save: "保存する",
+  cluster: "鉄板商品を抽出",
+  title: "タイトルで探す",
+  image: "画像で探す",
+};
+
+const PHASE_ORDER: Record<Props["kind"], Phase[]> = {
+  search: ["crawl", "names", "aggregate", "save"],
+  seller: ["list", "ship", "save", "cluster"],
+  sourcing: ["title", "image", "save"],
+};
+
+function fmtElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}秒`;
+  return `${Math.floor(s / 60)}分${String(s % 60).padStart(2, "0")}秒`;
+}
 
 export default function ScrapeRunner({
   kind,
   payload,
   buttonLabel,
   withSearchForm,
+  withDepthChoice,
+  withSourcingOptions,
   title,
   description,
   compact,
@@ -44,12 +87,20 @@ export default function ScrapeRunner({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ keyword: "", aruaru: "", pages: 2, resolve: 20 });
+  /** 実送料をいくつ取りに行くか。標準3件 / 詳細20件(参考にした既存サービスと同じ刻み) */
+  const [depth, setDepth] = useState<3 | 20>(3);
+  /** 3-3: どの探し方を使うか。両方外すと実行できない */
+  const [modes, setModes] = useState<("title" | "image")[]>(["title", "image"]);
   const [env, setEnv] = useState<{ available: boolean; reason?: string; hint?: string } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
   const logRef = useRef<HTMLDivElement>(null);
 
   const running = job?.status === "running" || starting;
 
-  // 実行中はジョブの状態を2秒おきに取りに行く
+  // 実行中はジョブの状態を取りに行く。
+  // 参考にした既存サービスの実測値(約2.8秒)に合わせている。短くしても
+  // メルカリへのアクセスが速くなるわけではなく、無駄な通信が増えるだけ。
   useEffect(() => {
     if (!job || job.status !== "running") return;
     const t = setInterval(async () => {
@@ -62,9 +113,16 @@ export default function ScrapeRunner({
       } catch {
         /* ネットワークの一時的な失敗は次の周期で拾う */
       }
-    }, 2000);
+    }, 2800);
     return () => clearInterval(t);
   }, [job, router]);
+
+  // 経過時間の表示。実行中だけ1秒ごとに更新する
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -82,11 +140,18 @@ export default function ScrapeRunner({
   const start = useCallback(async () => {
     setError(null);
     setStarting(true);
+    setStartedAt(Date.now());
+    setNow(Date.now());
     try {
       const body =
         kind === "search"
           ? { kind, keyword: form.keyword, aruaru: form.aruaru, pages: form.pages, resolve: form.resolve }
-          : { kind, ...payload };
+          : {
+              kind,
+              ...payload,
+              ...(withDepthChoice ? { shipping: depth } : {}),
+              ...(withSourcingOptions ? { modes } : {}),
+            };
       const r = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,7 +168,25 @@ export default function ScrapeRunner({
     } finally {
       setStarting(false);
     }
-  }, [kind, form, payload]);
+  }, [kind, form, payload, depth, withDepthChoice, withSourcingOptions, modes]);
+
+  // 段階の進み具合。全体の何%まで来たかを、段階の順番と段階内の進捗から出す
+  // 3-3 は選んだ探し方だけを段階として出す(使わない段階を灰色で残さない)
+  const phases = useMemo<Phase[]>(
+    () => (withSourcingOptions ? [...modes, "save"] : PHASE_ORDER[kind]),
+    [kind, withSourcingOptions, modes]
+  );
+  const percent = useMemo(() => {
+    const p = job?.progress;
+    if (!p) return null;
+    const idx = phases.indexOf(p.phase);
+    if (idx < 0) return null;
+    const within = p.total && p.total > 0 ? Math.min(1, (p.done ?? 0) / p.total) : 0;
+    return Math.round(((idx + within) / phases.length) * 100);
+  }, [job?.progress, phases]);
+
+  const elapsed = startedAt ? fmtElapsed(now - startedAt) : null;
+  const canRun = !running && (env === null || env.available);
 
   return (
     <div className="runner">
@@ -142,7 +225,7 @@ export default function ScrapeRunner({
               disabled={running}
               onChange={(e) => setForm({ ...form, keyword: e.target.value })}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && form.keyword.trim() && !running) start();
+                if (e.key === "Enter" && form.keyword.trim() && canRun) start();
               }}
             />
           </label>
@@ -184,24 +267,73 @@ export default function ScrapeRunner({
           </label>
           <button
             className="btn btn-primary"
+            data-busy={running || undefined}
             onClick={start}
-            disabled={running || !form.keyword.trim() || env !== null && !env.available}
+            disabled={!canRun || !form.keyword.trim()}
             type="button"
           >
             {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
-            {running ? "実行中…" : buttonLabel}
+            {running ? "実行中" : buttonLabel}
           </button>
         </div>
       ) : (
-        <button
-          className={compact ? "btn btn-ghost btn-sm" : "btn btn-primary"}
-          onClick={start}
-          disabled={running || env !== null && !env.available}
-          type="button"
-        >
-          {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
-          {running ? "実行中…" : buttonLabel}
-        </button>
+        <div className="form-row">
+          {withDepthChoice && (
+            <label className="field">
+              実送料を調べる件数
+              <select
+                className="input"
+                style={{ width: 168 }}
+                value={depth}
+                disabled={running}
+                onChange={(e) => setDepth(Number(e.target.value) === 20 ? 20 : 3)}
+              >
+                <option value={3}>標準 — SOLD上位3件</option>
+                <option value={20}>詳細 — SOLD上位20件</option>
+              </select>
+            </label>
+          )}
+          {withSourcingOptions &&
+            (["title", "image"] as const).map((m) => (
+              <label className="check" key={m}>
+                <input
+                  type="checkbox"
+                  checked={modes.includes(m)}
+                  disabled={running}
+                  onChange={(e) =>
+                    setModes((cur) =>
+                      e.target.checked
+                        ? [...new Set([...cur, m])].sort((a, b) => (a === "title" ? -1 : 1))
+                        : cur.filter((x) => x !== m)
+                    )
+                  }
+                />
+                {PHASE_LABEL[m]}
+              </label>
+            ))}
+          <button
+            className={compact ? "btn btn-ghost btn-sm" : "btn btn-primary"}
+            data-busy={running || undefined}
+            onClick={start}
+            disabled={!canRun || (withSourcingOptions && modes.length === 0)}
+            type="button"
+          >
+            {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
+            {running ? "実行中" : buttonLabel}
+          </button>
+          {withSourcingOptions && !running && (
+            <span className="hint" style={{ alignSelf: "center" }}>
+              {modes.length === 0
+                ? "探し方を1つ以上選んでください"
+                : `AliExpressを${modes.length}回開きます(約${modes.length * 30}秒)`}
+            </span>
+          )}
+          {withDepthChoice && !running && (
+            <span className="hint" style={{ alignSelf: "center" }}>
+              1件あたり商品ページを1回開きます(約{depth * 4}秒)
+            </span>
+          )}
+        </div>
       )}
 
       {error && (
@@ -211,38 +343,97 @@ export default function ScrapeRunner({
         </div>
       )}
 
-      {job && (
+      {(job || starting) && (
         <>
+          {/* 段階表示: 今どこまで来たか */}
+          <div className="phases">
+            {phases.map((p, i) => {
+              const cur = job?.progress?.phase;
+              const curIdx = cur ? phases.indexOf(cur) : -1;
+              const state =
+                job?.status === "done" ? "done" : curIdx < 0 ? "todo" : i < curIdx ? "done" : i === curIdx ? "active" : "todo";
+              return (
+                <span key={p} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {i > 0 && <span className="phase-arrow">›</span>}
+                  <span className="phase" data-state={state}>
+                    {state === "done" ? <IconCheck size={10} /> : <i className="phase-dot" />}
+                    {PHASE_LABEL[p]}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+
+          {/* 進捗バー: 総量が分かるときは値を、分からないときは往復させる */}
+          <div className={percent === null ? "progress progress-indeterminate" : "progress"}>
+            <div
+              className="progress-bar"
+              style={{ width: `${job?.status === "done" ? 100 : (percent ?? 35)}%` }}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginTop: 6,
+              fontSize: 12,
+              color: "var(--text-muted)",
+              flexWrap: "wrap",
+            }}
+          >
+            {job?.progress?.total ? (
+              <span className="num">
+                {job.progress.done ?? 0} / {job.progress.total}
+              </span>
+            ) : null}
+            {job?.progress?.label && (
+              <span
+                className="hint"
+                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "42ch" }}
+              >
+                {job.progress.label}
+              </span>
+            )}
+            <span className="spacer" style={{ flex: 1 }} />
+            {elapsed && <span className="num hint">経過 {elapsed}</span>}
+          </div>
+
           <div className="log" ref={logRef}>
-            {job.log.length === 0 ? (
-              <span className="log-empty">起動しています…</span>
+            {!job || job.log.length === 0 ? (
+              <span className="log-empty dots">起動しています</span>
             ) : (
               job.log.join("\n")
             )}
           </div>
-          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
-            {job.status === "running" && (
-              <span className="badge badge-brand">
+
+          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, flexWrap: "wrap" }}>
+            {running && (
+              <span className="pill pill-brand">
                 <IconLoader size={11} className="spin" /> 実行中
               </span>
             )}
-            {job.status === "done" && (
-              <span className="badge badge-green">
+            {job?.status === "done" && (
+              <span className="pill pill-good flash-ok">
                 <IconCheck size={11} /> 完了
               </span>
             )}
-            {job.status === "error" && (
-              <span className="badge badge-red">
+            {job?.status === "error" && (
+              <span className="pill pill-warn">
                 <IconAlert size={11} /> 中断
               </span>
             )}
-            {job.status !== "running" && (
+            {job && job.status !== "running" && (
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => router.refresh()}>
+                <IconRefresh size={12} />
                 画面を更新
               </button>
             )}
-            <span style={{ color: "var(--text-faint)" }}>
-              メルカリへのアクセスは2.5秒以上の間隔を空けています
+            <span className="hint">
+              {running
+                ? "このページを閉じても処理は続きます。メルカリへのアクセスは2.5秒以上の間隔を空けています"
+                : "メルカリへのアクセスは2.5秒以上の間隔を空けています"}
             </span>
           </div>
         </>

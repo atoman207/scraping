@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS sellers (
   rating double precision,          -- ★評価
   review_count integer,             -- 評価数
   profile_url text,
+  avatar_url text,                  -- プロフィール画像。既定画像のセラーはNULL(画面で頭文字を出す)
+  listing_count integer,            -- メルカリ側の総出品数(販売中)
+  good_ratings integer,             -- 良い評価の件数
+  bad_ratings integer,              -- 悪い評価の件数
+  registered_at text,               -- 出品者としての登録日
   fetched_at text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
   UNIQUE (platform, seller_external_id)
 );
@@ -88,6 +93,14 @@ CREATE TABLE IF NOT EXISTS listings (
   shipping_method_id text,          -- メルカリの配送方法マスタID
   is_shops boolean DEFAULT false,   -- メルカリShopsの出品か
   matched_keyword text,             -- どの検索でヒットしたか
+  -- 実送料の取得状況。「取れなかった」と「そもそも対象外」を区別する(3-2)
+  --   got    : 発送時に確定した実送料を取得できた
+  --   fixed  : 全国一律料金なので金額が確定している(クリックポスト・着払い)
+  --   failed : 取りに行ったが金額が公開されていなかった   → 画面は「(送料待ち)」
+  --   na     : 普通郵便・定形外・未定・取引未完了・Shops  → 画面は「—」
+  --   skip   : そのモードでは取得対象にしていない        → 画面は「—」
+  ship_status text,
+  ship_class text,                  -- 発送時に確定したサイズ区分名(「ネコポス」など)
   fetched_at text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
   UNIQUE (platform, external_id)
 );
@@ -105,6 +118,19 @@ CREATE TABLE IF NOT EXISTS product_groups (
   avg_shipping_cost double precision,
   representative_image_url text,
   is_repeat integer DEFAULT 0,      -- listing_count >= 2 なら1(鉄板商品候補)
+  -- ここから下は「どれくらい売れ続けているか」を画面で判断するための列
+  stock_count integer,              -- 販売中の件数(まだ在庫がある = 今も売っている)
+  min_price double precision,       -- 価格レンジ。値下げ幅が大きい商品は利益がぶれる
+  max_price double precision,
+  first_listed_at text,             -- 最初に出品した日。長く回しているほど鉄板度が高い
+  latest_sold_at text,              -- 直近で売れた日。古いものは今は売れていない可能性
+  sold_per_month double precision,  -- 実測の月販数(観測期間から算出。回転日数からの推定より確か)
+  shipping_method text,             -- 代表的な発送方法
+  ship_status text,                 -- 実送料の取得状況(got/fixed/failed/na/skip)
+  ship_class text,                  -- 発送時に確定したサイズ区分名
+  representative_listing_url text,  -- 代表商品のメルカリURL
+  distinct_title_count integer,     -- 束ねたタイトルの種類数。多い=タイトルを変えて出し直している
+  merged_titles jsonb,              -- 束ねた実際のタイトル一覧(グルーピングの妥当性を目で確認できる)
   created_at text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
   UNIQUE (seller_id, title_normalized)
 );
@@ -134,6 +160,37 @@ CREATE TABLE IF NOT EXISTS deepdive_items (
   status text DEFAULT 'candidate',         -- 'candidate' | 'adopted' | 'rejected'
   memo text,
   created_at text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS')
+);
+
+-- ④ 3-3: AliExpress / 1688 から拾った仕入れ候補
+--
+--   product_groups(鉄板商品)ごとに、タイトル検索と画像検索で見つけた候補を貯める。
+--   同じ商品を検索し直したら、その商品ぶんを入れ替える(履歴は残さない)。
+--   1688 はログインが必要で商品そのものを取れないため、
+--   search_mode='link' の「検索URLだけの行」が入る。
+CREATE TABLE IF NOT EXISTS sourcing_candidates (
+  id bigserial PRIMARY KEY,
+  product_group_id bigint NOT NULL REFERENCES product_groups(id) ON DELETE CASCADE,
+  source_platform text NOT NULL,        -- 'aliexpress' | '1688'
+  search_mode text NOT NULL,            -- 'title'=タイトル検索 / 'image'=画像検索 / 'link'=検索URLのみ
+  query text,                           -- 実際に投げた検索語、または画像検索の結果URL
+  external_id text,                     -- サイト側の商品ID(AliExpressの数字ID)
+  title text NOT NULL,
+  price double precision,               -- 表示通貨のままの価格
+  currency text,                        -- 'JPY' | 'USD' | 'CNY'
+  price_jpy double precision,
+  price_cny double precision,           -- deepdive_items.unit_cost_cny にそのまま入れられる
+  url text NOT NULL,
+  image_url text,
+  min_order_qty integer,
+  orders_count integer,                 -- 「1,000+ 点販売」の数字
+  rating double precision,
+  is_ad boolean DEFAULT false,          -- 広告枠(検索順位ではなく出稿で上に出ている)
+  match_score double precision,         -- 元タイトルとの一致度 0-100
+  rank integer,                         -- 画面に出す並び順(1が最有力)
+  is_picked boolean DEFAULT false,      -- 深掘りリストに採用した候補
+  fetched_at text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS'),
+  UNIQUE (product_group_id, source_platform, search_mode, url)
 );
 
 -- 原価計算の共通設定(アカウント単位。1行のみ)
@@ -177,6 +234,34 @@ CREATE TABLE IF NOT EXISTS jobs (
   finished_at timestamptz
 );
 
+-- ⑧ ログイン用の利用者
+--
+--   利用者が自分で登録することはできない。管理者が /admin で発行する。
+--   パスワードは scrypt ハッシュ(ログイン検証用)と、管理者確認用の暗号文を保存する
+--   (書式は lib/auth.ts の hashPassword() / encryptPassword() を参照)。
+CREATE TABLE IF NOT EXISTS app_users (
+  id bigserial PRIMARY KEY,
+  username text NOT NULL,
+  password_hash text NOT NULL,
+  password_enc text,                     -- 管理者確認用(AES-GCM)。無い古い行は表示不可
+  role text NOT NULL DEFAULT 'member',   -- 'admin' | 'member'
+  display_name text,
+  note text,                             -- 誰に渡したかのメモ
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_login_at timestamptz,
+  UNIQUE (username)
+);
+
+-- ログインセッション。ブラウザのCookieにはこの token だけを入れる
+CREATE TABLE IF NOT EXISTS app_sessions (
+  token text PRIMARY KEY,
+  user_id bigint NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  user_agent text
+);
+
 
 -- ============================================================================
 --  2. あとから足した列
@@ -205,11 +290,37 @@ ALTER TABLE listings
   ADD COLUMN IF NOT EXISTS updated_at text,
   ADD COLUMN IF NOT EXISTS shipping_method_id text,
   ADD COLUMN IF NOT EXISTS is_shops boolean DEFAULT false,
-  ADD COLUMN IF NOT EXISTS matched_keyword text;
+  ADD COLUMN IF NOT EXISTS matched_keyword text,
+  ADD COLUMN IF NOT EXISTS ship_status text,
+  ADD COLUMN IF NOT EXISTS ship_class text;
 
 ALTER TABLE seller_research_results
   ADD COLUMN IF NOT EXISTS genre_count integer,
   ADD COLUMN IF NOT EXISTS seller_type text;
+
+ALTER TABLE sellers
+  ADD COLUMN IF NOT EXISTS avatar_url text,
+  ADD COLUMN IF NOT EXISTS listing_count integer,
+  ADD COLUMN IF NOT EXISTS good_ratings integer,
+  ADD COLUMN IF NOT EXISTS bad_ratings integer,
+  ADD COLUMN IF NOT EXISTS registered_at text;
+
+ALTER TABLE app_users
+  ADD COLUMN IF NOT EXISTS password_enc text;
+
+ALTER TABLE product_groups
+  ADD COLUMN IF NOT EXISTS stock_count integer,
+  ADD COLUMN IF NOT EXISTS min_price double precision,
+  ADD COLUMN IF NOT EXISTS max_price double precision,
+  ADD COLUMN IF NOT EXISTS first_listed_at text,
+  ADD COLUMN IF NOT EXISTS latest_sold_at text,
+  ADD COLUMN IF NOT EXISTS sold_per_month double precision,
+  ADD COLUMN IF NOT EXISTS shipping_method text,
+  ADD COLUMN IF NOT EXISTS ship_status text,
+  ADD COLUMN IF NOT EXISTS ship_class text,
+  ADD COLUMN IF NOT EXISTS representative_listing_url text,
+  ADD COLUMN IF NOT EXISTS distinct_title_count integer,
+  ADD COLUMN IF NOT EXISTS merged_titles jsonb;
 
 -- 既存行の初期値を埋める(ALTER の DEFAULT は既存行には入らないため)
 UPDATE deepdive_items SET cost_mode     = 'detail' WHERE cost_mode IS NULL;
@@ -262,6 +373,9 @@ END $$;
 CREATE INDEX IF NOT EXISTS listings_seller_status_idx ON listings (seller_id, status);
 CREATE INDEX IF NOT EXISTS jobs_status_created_idx    ON jobs (status, created_at);
 CREATE INDEX IF NOT EXISTS jobs_created_idx           ON jobs (created_at DESC);
+CREATE INDEX IF NOT EXISTS app_sessions_user_idx      ON app_sessions (user_id);
+CREATE INDEX IF NOT EXISTS app_sessions_expires_idx   ON app_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS sourcing_group_rank_idx     ON sourcing_candidates (product_group_id, rank);
 
 
 -- ============================================================================
@@ -400,6 +514,10 @@ ALTER TABLE product_groups          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deepdive_items          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sourcing_candidates     ENABLE ROW LEVEL SECURITY;
+-- 利用者とセッションは、anonキーからは絶対に読めてはいけない
+ALTER TABLE app_users               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_sessions            ENABLE ROW LEVEL SECURITY;
 
 -- ビューは security_invoker を付けて、下のテーブルのRLSがそのまま効くようにする
 -- (PostgreSQL 15以降。Supabaseは15+なので通常成功する)

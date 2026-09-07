@@ -1,92 +1,92 @@
 /**
  * 発注仕様書 3-2: セラー深掘り
- * 指定セラーの出品一覧を取得して listings に投入し、実送料を上位N件だけ取得したうえで、
- * engine/cluster_seller_listings.py 相当の鉄板商品抽出まで一気に流す。
  *
- *   npm run scrape:seller -- --seller 223868190 --max 100 --shipping 3
+ * 指定セラーの出品一覧を新しい順に最大100件取得して listings に投入し、
+ * 実送料を上位N件だけ取得したうえで、鉄板商品(繰り返し出品)の抽出まで一気に流す。
+ *
+ *   npm run scrape:seller -- --seller 223868190
+ *   npm run scrape:seller -- --seller 223868190 --max 100 --shipping 20
+ *   npm run scrape:seller -- --seller shops:waKfjvmcR3eg7r4eL3xS8b
+ *
+ * オプション:
+ *   --seller    セラーID。メルカリShopsは "shops:<店舗ID>"。プロフィールURLでも可
+ *   --max       取得する出品数の上限(既定100 = 仕様書の上限)
+ *   --shipping  実送料を取りに行くSOLD上位件数(既定3。詳細モードは20)
+ *   --interval  アクセス間隔ミリ秒(既定2500)。ブロックされたら大きくする
+ *   --headed    ブラウザを画面に出す(動作確認用)
+ *   --dry-run   DBに書かず、取得結果だけ表示する
+ *
+ * 処理の本体は lib/scraper/seller-run.ts にある(画面・ワーカーからも同じものを使う)。
+ * ここは引数の受け取りと表示だけを担当する。
  */
 import "./_env";
 import { parseArgs, argOne, requireArg } from "./_env";
-import { MercariScraper } from "../lib/scraper/mercari";
-import { findSellerId, saveListings } from "../lib/scraper/persist";
-import { BlockedError, type ScrapedSeller } from "../lib/scraper/types";
-import { run as clusterListings } from "../lib/engine/cluster";
-import { getSupabase, must } from "../lib/supabase";
+import {
+  DEFAULT_INTERVAL_MS,
+  DEFAULT_MAX_ITEMS,
+  DEFAULT_SHIPPING_TOP,
+  runSellerDeepdive,
+} from "../lib/scraper/seller-run";
+import { BlockedError } from "../lib/scraper/types";
 
 const args = parseArgs(process.argv.slice(2));
-const sellerExternalId = requireArg(args, "seller");
-const maxItems = Number(argOne(args, "max") ?? 100);
+const maxItems = Number(argOne(args, "max") ?? DEFAULT_MAX_ITEMS);
 // 実送料は商品ページを1件ずつ開くので、既定は上位3件だけ(仕様書の「標準=上位3件」に合わせた)
-const shippingTop = Number(argOne(args, "shipping") ?? 3);
-const intervalMs = Number(argOne(args, "interval") ?? 2500);
+const shippingTop = Number(argOne(args, "shipping") ?? DEFAULT_SHIPPING_TOP);
+const intervalMs = Number(argOne(args, "interval") ?? DEFAULT_INTERVAL_MS);
 const headless = argOne(args, "headed") === undefined;
+const dryRun = args["dry-run"] !== undefined;
+const sellerExternalId = requireArg(args, "seller");
 
 async function main() {
   const log = (m: string) => console.log(m);
-  const scraper = new MercariScraper({ minIntervalMs: intervalMs, headless, log });
-  await scraper.start();
   try {
     console.log(`\n=== 3-2 セラー深掘り: ${sellerExternalId} ===`);
-    const profile = await scraper.getSellerProfile(sellerExternalId);
-    const listings = await scraper.getSellerListings(sellerExternalId, maxItems);
-    if (!listings.length) {
-      console.log("出品が取得できませんでした。セラーIDを確認してください。");
+    const result = await runSellerDeepdive({
+      sellerExternalId,
+      maxItems,
+      shippingTop,
+      intervalMs,
+      headless,
+      dryRun,
+      log,
+    });
+
+    if (!result.listings) {
+      process.exitCode = 1;
       return;
     }
 
-    // 実送料: SOLDのうち上位N件だけ商品ページを開いて取得する
-    const soldTargets = listings.filter((l) => l.status === "sold").slice(0, shippingTop);
-    if (soldTargets.length) {
-      console.log(`\n実送料を取得します(SOLD上位${soldTargets.length}件のみ)`);
-      for (const l of soldTargets) {
-        try {
-          const cost = await scraper.getRealShippingCost(l.listing_url!);
-          if (cost !== null) {
-            l.shipping_cost = cost;
-            console.log(`  ${l.external_id}: ¥${cost}`);
-          }
-        } catch (e) {
-          if (e instanceof BlockedError) throw e;
-          console.log(`  ${l.external_id}: 取得失敗 (${String(e).slice(0, 70)})`);
-        }
+    if (dryRun) {
+      console.log("\n--- 取得結果(--dry-run のためDBには書きません) ---");
+      for (const l of result.items.slice(0, 20)) {
+        const ship =
+          l.ship_status === "skip"
+            ? ""
+            : l.shipping_cost !== null
+              ? ` 送料¥${l.shipping_cost}${l.ship_class ? `(${l.ship_class})` : ""}`
+              : ` 送料:${l.ship_status}`;
+        console.log(
+          `  ${l.status === "sold" ? "SOLD" : "販売中"} ¥${l.price.toLocaleString()} ` +
+            `${(l.listed_at ?? "").slice(0, 10)} ${l.title.slice(0, 34)}${ship}`
+        );
       }
-    }
-
-    console.log("\n--- DBへ投入 ---");
-    const profiles = new Map<string, ScrapedSeller>();
-    if (profile) profiles.set(sellerExternalId, profile);
-    await saveListings(listings, profiles, log);
-
-    // 既存行の送料が空なら埋める(saveListingsは重複を無視するため個別に更新)
-    const sb = getSupabase();
-    for (const l of soldTargets) {
-      if (l.shipping_cost === null || l.shipping_cost === undefined) continue;
-      must(
-        await sb
-          .from("listings")
-          .update({ shipping_cost: l.shipping_cost, shipping_method: l.shipping_method })
-          .eq("platform", l.platform)
-          .eq("external_id", l.external_id)
-          .select("id")
-      );
-    }
-
-    const sellerId = await findSellerId("mercari", sellerExternalId);
-    if (!sellerId) {
-      console.log("seller_id を解決できませんでした。");
+      if (result.items.length > 20) console.log(`  … 他 ${result.items.length - 20}件`);
       return;
     }
-    console.log("\n--- 鉄板商品の抽出 ---");
-    await clusterListings(sellerId, log);
-    console.log(`\n完了。 http://localhost:3000/seller-deepdive?seller_id=${sellerId} を開いてください。`);
+
+    console.log(
+      `\nグループ${result.groups}件(うち鉄板商品${result.repeat_groups}件)を保存しました。`
+    );
+    console.log(
+      `完了。 http://localhost:3000${result.result_href} を開いてください。`
+    );
   } catch (e) {
     if (e instanceof BlockedError) {
       console.error(`\n[中断] ${e.message}\n  URL: ${e.url}`);
       console.error("  --interval を大きく(例: 6000)して時間をおいて再実行してください。");
       process.exitCode = 1;
     } else throw e;
-  } finally {
-    await scraper.close();
   }
 }
 

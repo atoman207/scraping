@@ -23,6 +23,7 @@ export async function upsertSeller(s: ScrapedSeller): Promise<number> {
     if (s.rating !== null) patch.rating = s.rating;
     if (s.review_count !== null) patch.review_count = s.review_count;
     if (s.profile_url) patch.profile_url = s.profile_url;
+    if (s.avatar_url) patch.avatar_url = s.avatar_url;
     must(await sb.from("sellers").update(patch).eq("id", found.id).select("id"));
     return found.id;
   }
@@ -37,11 +38,31 @@ export async function upsertSeller(s: ScrapedSeller): Promise<number> {
         rating: s.rating,
         review_count: s.review_count,
         profile_url: s.profile_url,
+        avatar_url: s.avatar_url ?? null,
       })
       .select("id")
       .single()
   ) as { id: number };
   return created.id;
+}
+
+/** プロフィールページを実際に開いて取れた情報(mercari-seller.ts の SellerProfile と同じ形) */
+type FetchedSeller = ScrapedSeller & {
+  listing_count?: number | null;
+  good_ratings?: number | null;
+  bad_ratings?: number | null;
+  registered_at?: string | null;
+};
+
+/**
+ * そのセラーのプロフィールを実際に開いて取れたものかどうか。
+ *
+ * 検索結果からしか分かっていないセラーは、名前とIDしか持っていない。
+ * プロフィールを開いた場合は必ず avatar_url を(取れなければ null として)持つので、
+ * このキーの有無で区別できる。
+ */
+function isFetchedProfile(s: ScrapedSeller): s is FetchedSeller {
+  return "avatar_url" in s;
 }
 
 export type SaveResult = { sellers: number; inserted: number; skipped: number };
@@ -88,6 +109,8 @@ export async function saveListings(
       shipping_method_id?: string | null;
       is_shops?: boolean;
       matched_keyword?: string;
+      ship_status?: string | null;
+      ship_class?: string | null;
     };
     return {
       seller_id: sellerIds.get(l.seller_external_id)!,
@@ -107,6 +130,8 @@ export async function saveListings(
       shipping_method_id: ext.shipping_method_id ?? null,
       is_shops: ext.is_shops ?? false,
       matched_keyword: ext.matched_keyword ?? null,
+      ship_status: ext.ship_status ?? null,
+      ship_class: ext.ship_class ?? null,
     };
   });
 
@@ -126,6 +151,52 @@ export async function saveListings(
   const result = { sellers: sellerIds.size, inserted, skipped: rows.length - inserted };
   log(`出品: ${result.inserted}件を新規登録(既存のためスキップ ${result.skipped}件)`);
   return result;
+}
+
+/**
+ * 実送料を取りに行った出品について、既存行を更新する(3-2)。
+ *
+ * saveListings() は既存の (platform, external_id) を**無視する**(＝上書きしない)ため、
+ * 2回目以降の深掘りで取れた実送料がそのままでは反映されない。
+ * 実送料は「上位N件だけ後から取りに行く」性質の値なので、ここだけ明示的に更新する。
+ *
+ * ship_status が未設定/skip の出品(＝そもそも取りに行っていない)は触らない。
+ * 以前に取れていた値を、今回の対象外だからといって消してしまわないため。
+ */
+export async function updateShipping(
+  listings: {
+    platform: string;
+    external_id: string;
+    shipping_cost?: number | null;
+    shipping_method?: string | null;
+    ship_status?: string | null;
+    ship_class?: string | null;
+  }[],
+  log: (m: string) => void = () => {}
+): Promise<number> {
+  const targets = listings.filter((l) => l.ship_status && l.ship_status !== "skip");
+  if (!targets.length) return 0;
+
+  const sb = getSupabase();
+  let updated = 0;
+  for (const l of targets) {
+    const res = must(
+      await sb
+        .from("listings")
+        .update({
+          shipping_cost: l.shipping_cost ?? null,
+          shipping_method: l.shipping_method ?? null,
+          ship_status: l.ship_status,
+          ship_class: l.ship_class ?? null,
+        })
+        .eq("platform", l.platform)
+        .eq("external_id", l.external_id)
+        .select("id")
+    ) as { id: number }[] | null;
+    updated += res?.length ?? 0;
+  }
+  log(`実送料: ${updated}件を更新`);
+  return updated;
 }
 
 /** searches テーブルに検索履歴を1行作り、そのIDを返す */
@@ -228,30 +299,60 @@ export async function upsertSellers(
   const out = new Map<string, number>();
   if (!profiles.size) return out;
 
-  const rows = [...profiles].map(([sid, p]) => ({
-    platform: p?.platform ?? fallbackPlatform,
-    seller_external_id: sid,
-    seller_name: p?.seller_name ?? sid,
-    rating: p?.rating ?? null,
-    review_count: p?.review_count ?? null,
-    profile_url: p?.profile_url ?? null,
-  }));
-
   const sb = getSupabase();
+
+  // プロフィールを取りに行ったセラーと、そうでないセラーを分けて書く。
+  //
+  // 分ける理由は2つ:
+  //   ① 取りに行っていないセラーは名前以外が全部 null になる。同じ形で書くと
+  //      以前に取れていたアバターや評価を null で塗り潰してしまう。
+  //   ② PostgREST の一括upsertは、配列の全要素でキーが揃っている必要がある
+  //      (揃っていないと「All object keys must match」で失敗する)。
+  //      行ごとに項目を出し入れするのではなく、形の違う2組に分けて別々に書く。
+  const detailed: Record<string, unknown>[] = [];
+  const basic: Record<string, unknown>[] = [];
+
+  for (const [sid, p] of profiles) {
+    const platform = p?.platform ?? fallbackPlatform;
+    const base = {
+      platform,
+      seller_external_id: sid,
+      seller_name: p?.seller_name ?? sid,
+      profile_url: p?.profile_url ?? null,
+    };
+    if (p && isFetchedProfile(p)) {
+      detailed.push({
+        ...base,
+        rating: p.rating,
+        review_count: p.review_count,
+        avatar_url: p.avatar_url ?? null,
+        listing_count: p.listing_count ?? null,
+        good_ratings: p.good_ratings ?? null,
+        bad_ratings: p.bad_ratings ?? null,
+        registered_at: p.registered_at ?? null,
+      });
+    } else {
+      basic.push(base);
+    }
+  }
+
   // (platform, seller_external_id) の一意制約で既存行は更新される
-  for (let i = 0; i < rows.length; i += 200) {
-    must(
-      await sb
-        .from("sellers")
-        .upsert(rows.slice(i, i + 200), { onConflict: "platform,seller_external_id" })
-        .select("id")
-    );
+  for (const group of [detailed, basic]) {
+    for (let i = 0; i < group.length; i += 200) {
+      must(
+        await sb
+          .from("sellers")
+          .upsert(group.slice(i, i + 200), { onConflict: "platform,seller_external_id" })
+          .select("id")
+      );
+    }
   }
 
   // 採番された内部IDを引き直す(upsertの戻り順は保証されないためIDで引く)
+  const rows = [...detailed, ...basic];
   const platforms = [...new Set(rows.map((r) => r.platform))];
   for (const platform of platforms) {
-    const ids = rows.filter((r) => r.platform === platform).map((r) => r.seller_external_id);
+    const ids = rows.filter((r) => r.platform === platform).map((r) => r.seller_external_id as string);
     for (let i = 0; i < ids.length; i += 200) {
       const found = (must(
         await sb

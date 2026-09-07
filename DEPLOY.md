@@ -71,11 +71,37 @@ npm run db:check     # 「すべて適用済みです」と出れば完了
 > `.env.local` に `DATABASE_URL`（Supabase > Project Settings > Database > Connection string の URI）を
 > 設定すると、次回から `npm run db:push` が**自動で当たります**。手貼りは今回だけで済みます。
 
-### 2. ブラウザ本体（初回のみ）
+### 2. ブラウザ本体（初回のみ・**必須**）
+
+リサーチはヘッドレスChromiumで実際にページを開いて行います。
+このブラウザ本体は **`npm install` では入りません**。1回だけ別にダウンロードします。
+
+`ops/install-browser.cmd` をダブルクリック（管理者権限は不要）、または:
 
 ```bash
 npx playwright install chromium
+npm run test:browser     # 起動できるか確認する。メルカリには一切アクセスしません
 ```
+
+`npm run test:browser` が「問題ありません」と出れば完了です。
+
+> **入っていないと何が起きるか**
+> 画面からリサーチを実行した瞬間に、ジョブのログへ英語のエラーが出て止まります:
+>
+> ```
+> [エラー] browserType.launch: Executable doesn't exist at
+> C:\Users\...\AppData\Local\ms-playwright\chromium_headless_shell-1234\...
+> ```
+>
+> これは「ブラウザ本体がまだ無い」という意味だけです。上のコマンドを実行すれば直ります。
+> VPSを作り直したときやユーザープロファイルを消したときにも再発するので、
+> そのときは `ops/install-browser.cmd` をもう一度実行してください。
+
+> **保険**
+> Playwright付属のChromiumが見つからない場合、このPCにインストール済みの
+> Chrome / Edge を借りて自動的に動き続けます（そのことはジョブのログに残ります）。
+> ただし本来の構成ではないので、ログに出たら `ops/install-browser.cmd` を実行してください。
+> Chrome も Edge も無ければ、日本語で直し方を示して停止します。
 
 ### 3. 起動
 
@@ -91,6 +117,109 @@ npm run worker
 ```
 
 ワーカーが動いていないと、画面からリサーチを実行しても順番待ちのまま進みません。
+
+### 3-2. 他の端末のブラウザから開く（社内LAN）
+
+同じ社内ネットワークのノートPCやスマホから、`http://<このPCのIPアドレス>:3000` で使えるようにします。
+
+**① ファイアウォールを開ける（初回のみ）**
+
+`ops/allow-lan-access.cmd` を**右クリック →「管理者として実行」**
+
+受信規則を1本足すだけです。実行するとアクセス先のURLも表示されます。
+やめるときは `ops/deny-lan-access.cmd` を同じように実行してください。
+
+許可する送信元は `-Scope` で決まります（既定は `private`）:
+
+| `-Scope` | 通す送信元 | 使いどころ |
+|---|---|---|
+| `private` | `10.0.0.0/8` `172.16.0.0/12` `192.168.0.0/16` | **既定**。社内が複数サブネットに分かれていても届く |
+| `subnet` | このPCと同じサブネットのみ | いちばん狭い。**別サブネットの端末は弾かれる** |
+| `any` | 制限なし | 通常は不要 |
+
+> **なぜ既定が `subnet` ではなく `private` なのか**
+> 社内LANが1つのサブネットとは限らないためです。このPCは `172.23.66.149/23`
+> （＝`172.23.66.0`〜`172.23.67.255`）にいますが、DNSは `10.11.21.36` にあり、
+> 実際に複数のサブネットにまたがっています。`subnet` だと、`10.x` 側にいる端末からは
+> **接続が黙って捨てられ、「ページが開けない」だけが起きます**（エラーも出ません）。
+> `private` はプライベートIP全体を通す一方、インターネット側のアドレスからは通しません。
+
+中身は `ops/lan-access.ps1` にまとめてあります（`.cmd` は呼び出すだけ）。
+いまの状態を確認したいだけなら、管理者権限なしでこれだけ実行できます:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ops\lan-access.ps1 -Action show
+```
+
+> `.cmd` 側に日本語を書いていないのは意図的です。cmd.exe は UTF-8 の行を読み違えて、
+> メッセージの断片をコマンドとして実行しようとすることがあります
+> （既存の `ops/install-tasks.cmd` などは、この理由で表示が崩れます。動作自体には影響しません）。
+
+手で入れる場合（PowerShellを管理者で）:
+
+```powershell
+New-NetFirewallRule -DisplayName "Tenbai Dashboard (TCP 3000)" `
+  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3000 `
+  -Profile Domain,Private `
+  -RemoteAddress 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+**② このPCのIPアドレスを調べて、相手の端末で開く**
+
+```powershell
+ipconfig | findstr IPv4
+```
+
+→ 出てきたアドレスで `http://<IPアドレス>:3000` を開く（例: `http://172.23.66.149:3000`）
+
+待ち受け側の設定は不要です。`npm run dev` / `npm run start` のどちらにも `-H 0.0.0.0` を付けてあり、
+最初からすべてのネットワークアダプターで待ち受けています。ポートを変えるときは `PORT` を設定し、
+ファイアウォール規則の番号も合わせて変えてください。
+
+> **ログイン後にまたログイン画面に戻る場合**（本番モードで起きていた不具合）
+> セッションCookieの `Secure` は、以前は本番モード（`npm run start`）で必ず付いていました。
+> `Secure` の付いたCookieは `https://` でないとブラウザが保存しないため、
+> `http://<IPアドレス>:3000` では**ログインが通ってもCookieが残らず、ログイン画面に戻され続けます**。
+> （`localhost` だけは例外的に保存されるので、このPC上では気づけません）
+> 現在は `x-forwarded-proto` を見て自動で判断します。HTTPSで公開していて、
+> プロキシがこのヘッダを付けてくれない構成のときだけ `.env.local` に `COOKIE_SECURE=1` を書いてください。
+
+#### つながらないときは、まず診断を回す
+
+`ops/lan-doctor.cmd` を実行してください（管理者権限は不要）。
+サーバー側の原因を一通り調べて、次に何を見ればよいかまで出します。
+
+- 画面が起動しているか／`0.0.0.0` で待ち受けているか
+- ファイアウォール規則があるか、送信元の範囲が社内をカバーしているか
+- 規則のプロファイル（Domain/Private）が、いま繋がっているネットワークに合っているか
+- **外の端末からの通信が実際に届いているか**（Windowsファイアウォールのログを読みます）
+
+最後の項目が効きます。ログを有効にしておくと、原因を2つに切り分けられます:
+
+```powershell
+Set-NetFirewallProfile -Profile Domain,Private -LogBlocked True
+```
+
+| ログの内容 | 意味 | 対処 |
+|---|---|---|
+| `DROP` が記録される | 通信は届いているが、許可範囲の外から来ている | `-Scope private` で入れ直す |
+| 何も記録されない | 通信がこのPCまで届いていない | 相手の端末・経路側の問題（下記） |
+
+通信が届いていない場合、相手の端末で確認すること:
+
+| 確認すること | 補足 |
+|---|---|
+| URLを検索窓ではなく**アドレス欄**に入れているか | スマホでは特に、IPアドレスが検索語として扱われがちです |
+| `http://` から入れているか | 省略するとブラウザが `https://` へ上げてしまい、接続できません |
+| プロキシ設定が入っていないか | 社内プロキシは3000番のような番号を通さないことがあります |
+| `ping <IPアドレス>` が通るか | 通る＝経路はある。通らない＝ネットワーク（VLAN分離など）の問題 |
+| `Test-NetConnection <IP> -Port 3000` | `ping` は通るのにこれが失敗 → このPC側の許可範囲を見直す |
+
+> **公開範囲についての注意**
+> これは **社内LANに開ける**作業で、インターネットに直接さらすものではありません。
+> 社内LANの中でも入口を絞りたい場合は、`.env.local` の `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` に
+> 値を入れると、ログイン画面の手前にもう1枚Basic認証の壁を置けます
+> （**いまは空欄のため無効**です。値を入れたら画面を再起動してください）。
 
 ### 4. 自動起動の登録（VPS再起動後も動くように）
 
@@ -120,15 +249,39 @@ npm run db:backup -- --restore backups/2026-09-03_2033   # 復元
 
 ### 動作確認
 
+`/api/jobs` はログインが必要です。ブラウザでログインしてから、そのCookieを付けて叩いてください
+（`-H "Cookie: tenbai_session=<ログイン後のCookie値>"`）。
+
 ```bash
 # ワーカーを起動しておいた状態で
+
+# 3-1 セラーリサーチ
 curl -X POST http://localhost:3000/api/jobs \
   -H "Content-Type: application/json" \
   -d '{"kind":"search","keyword":"スマホ スタンド","pages":2,"sellers":10}'
 # → {"jobId":1,"seq":1,"label":"リサーチ：スマホ スタンド（2ページ）"}
 
+# 3-2 セラー深掘り（セラーIDでもプロフィールURLでも可）
+curl -X POST http://localhost:3000/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"seller","seller_external_id":"223868190","max":100,"shipping":3}'
+# → {"jobId":2,"seq":2,"label":"セラー深掘り：223868190（最大100件・実送料3件）"}
+
+# 3-3 仕入れ候補
+curl -X POST http://localhost:3000/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"sourcing","product_group_id":2,"modes":["title","image"],"apply":true}'
+
 curl "http://localhost:3000/api/jobs?id=1"
 ```
+
+`kind=seller` のパラメータ:
+
+| | | |
+|---|---|---|
+| `seller_external_id` | 必須 | セラーID。メルカリShopsは `shops:<店舗ID>`。プロフィールURLを貼っても正規化されます |
+| `max` | 既定100 | 取得する出品数の上限（1〜300） |
+| `shipping` | 既定3 | 実送料を取りに行くSOLD上位件数（0〜20。標準3件 / 詳細20件） |
 
 DBを使わずスクレイパー単体で試すなら：
 ```bash
@@ -145,10 +298,12 @@ npm run scrape:search -- --keyword "スマホ スタンド" --pages 2 --dry
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role キー（**公開厳禁**） | ✅ |
 | `DATABASE_URL` | マイグレーションの自動適用に使用 | 推奨 |
 | `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` | 画面のBasic認証 | 外部公開するなら必須 |
+| `COOKIE_SECURE` | セッションCookieの `Secure`。未設定なら `x-forwarded-proto` を見て自動判断 | – |
 | `SCRAPE_INTERVAL_MS` | ページ送りの間隔（既定5000）。短くするとブロックされやすい | – |
 | `SCRAPE_COOLDOWN_MS` | ブロック後の待機（既定600000＝10分） | – |
 
 > VPSの画面を外部に公開する場合は、**Basic認証を必ず設定**してください（未設定だと誰でも開けます）。
+> （同じLAN内の端末から使うだけなら「3-2. 他の端末のブラウザから開く」を参照）
 > 自分だけが使うなら、`npm run start` を localhost に限定し、Cursorのポート転送経由で見るのが安全です。
 
 ---
@@ -179,8 +334,7 @@ git push origin main
 | **メルカリShops** | 通常出品と名前空間が違うため `shops:` を付けて区別 |
 | **サイト構造の変更** | 検索レスポンスの形が変わると0件になる。その場合ジョブはエラーで止まり「検索結果を取得できませんでした」と記録される（黙って壊れない設計） |
 | **アクセス制限** | 403/429/503 を受けたら `BlockedError` で即停止し、ワーカーは10分待機 |
-| **3-2 のワーカー対応** | 未実装。CLI（`npm run scrape:seller`）は動きます |
-| **画面のジョブ連携** | 画面はまだ旧 `/api/scrape` を使用。新しい `/api/jobs` への接続が残っています |
+| **画面のジョブ連携** | 画面はまだ旧 `/api/scrape` を使用。新しい `/api/jobs` への接続が残っています（`/api/jobs` 側は 3-1 / 3-2 / 3-3 すべて受け付けます） |
 
 ## 規約についての技術者見解（発注仕様書 6.）
 

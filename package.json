@@ -3,9 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
     "db:push": "tsx scripts/apply-schema.ts",
     "import:csv": "tsx scripts/import-csv.ts",
     "engine:cluster": "tsx scripts/cluster-seller-listings.ts",
@@ -22,7 +22,13 @@
     "db:check": "tsx scripts/db-check.ts",
     "db:backup": "tsx scripts/db-backup.ts",
     "test:schema": "tsx scripts/verify-schema.ts",
-    "verify:3-1": "tsx scripts/verify-3-1.ts"
+    "test:browser": "tsx scripts/verify-browser.ts",
+    "verify:3-1": "tsx scripts/verify-3-1.ts",
+    "verify:3-2": "tsx scripts/verify-3-2.ts",
+    "test:3-2": "tsx scripts/verify-3-2-parse.ts",
+    "test:auth": "tsx scripts/verify-auth.ts",
+    "verify:3-3": "tsx scripts/verify-3-3.ts",
+    "test:3-3": "tsx scripts/verify-3-3-parse.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -35,6 +41,7 @@
     "@types/node": "^22.5.0",
     "@types/pg": "^8.11.10",
     "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.7",
     "dotenv": "^16.4.5",
     "pg": "^8.13.1",
     "tsx": "^4.19.2",

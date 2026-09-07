@@ -86,11 +86,18 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--brand), #8b7bf0);
   display: grid;
   place-items: center;
-  color: #fff;
   flex-shrink: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .nav {
@@ -154,9 +161,11 @@ body {
 
 .page {
   max-width: 1080px;
+  margin: 0 auto;
 }
 .page-wide {
   max-width: 1180px;
+  margin: 0 auto;
 }
 
 /* ---------- 見出し ---------- */
@@ -522,4 +531,1019 @@ details.settings > summary::after {
 }
 details.settings[open] > summary::after {
   content: "▴";
+}
+
+/* ===============================================================
+   セラーのアバター
+   画像が無いセラー(メルカリ既定画像)は、名前の頭文字を色付きの丸で出す。
+   全員が同じ灰色アイコンだと一覧で見分けがつかないため。
+   =============================================================== */
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  overflow: hidden;
+  user-select: none;
+}
+.avatar-lg {
+  width: 56px;
+  height: 56px;
+  font-size: 21px;
+}
+.avatar-sm {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+}
+/* 名前から決まる色。同じセラーは常に同じ色になる */
+.avatar[data-hue="0"] { background: linear-gradient(135deg, #6366f1, #8b5cf6); border-color: transparent; }
+.avatar[data-hue="1"] { background: linear-gradient(135deg, #0ea5e9, #22d3ee); border-color: transparent; }
+.avatar[data-hue="2"] { background: linear-gradient(135deg, #10b981, #34d399); border-color: transparent; }
+.avatar[data-hue="3"] { background: linear-gradient(135deg, #f59e0b, #fbbf24); border-color: transparent; }
+.avatar[data-hue="4"] { background: linear-gradient(135deg, #ef4444, #f87171); border-color: transparent; }
+.avatar[data-hue="5"] { background: linear-gradient(135deg, #ec4899, #f472b6); border-color: transparent; }
+.avatar[data-hue="6"] { background: linear-gradient(135deg, #14b8a6, #2dd4bf); border-color: transparent; }
+.avatar[data-hue="7"] { background: linear-gradient(135deg, #8b5cf6, #c084fc); border-color: transparent; }
+
+.seller-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.seller-cell .name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 26ch;
+}
+.seller-cell .sub {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===============================================================
+   状態を表すピル(セラー分類・実送料の取得状況)
+   色は意味に対応させる: 良い=緑 / 注意=橙 / 不可=灰 / 特別=紫
+   =============================================================== */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.pill-hot {
+  background: linear-gradient(135deg, #fff1e6, #ffe4d1);
+  color: #b45309;
+  border-color: #f7d3ae;
+}
+.pill-good { background: var(--green-soft); color: var(--green); border-color: #bfe6cb; }
+.pill-warn { background: var(--amber-soft); color: var(--amber); border-color: var(--amber-border); }
+.pill-mute { background: var(--surface-2); color: var(--text-faint); border-color: var(--border); }
+.pill-info { background: #e8f2ff; color: #1d4ed8; border-color: #c7dcfb; }
+.pill-brand { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-border); }
+
+/* NG判定(新品率が低い/回転が遅い)の行。消さずに薄くして残す */
+tr[data-ng="true"] td:not(:last-child) {
+  opacity: 0.5;
+}
+tr[data-ng="true"] .name {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+
+/* ===============================================================
+   指標タイル
+   =============================================================== */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 11px 13px;
+  box-shadow: var(--shadow);
+}
+.tile-label {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+}
+.tile-value {
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.tile-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+.tile-accent { color: var(--brand); }
+.tile-pos { color: var(--green); }
+.tile-neg { color: var(--red); }
+
+/* ===============================================================
+   待ち時間の演出
+   処理は数十秒かかるので、止まって見えないようにする。
+   動きが苦手な人のために prefers-reduced-motion では止める。
+   =============================================================== */
+
+/* 読み込み中の骨組み(シマー) */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, #eef0f3 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.skel-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+.skel-line { height: 10px; }
+.skel-circle { border-radius: var(--r-pill); }
+
+/* 進捗バー。総量が分かるときは値を、分からないときは往復させる */
+.progress {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.progress-bar {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--brand), #8b7bf0);
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+}
+/* 進んでいる最中は、バーの中を光が流れる */
+.progress-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: sweep 1.5s linear infinite;
+}
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+/* 総量が分からないとき(起動直後など)は往復させる */
+.progress-indeterminate .progress-bar {
+  width: 35% !important;
+  animation: slide 1.5s ease-in-out infinite;
+}
+@keyframes slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+/* 実行中の段階表示 */
+.phases {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 8px;
+}
+.phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.phase[data-state="active"] {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-color: var(--brand-border);
+}
+.phase[data-state="done"] {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: #bfe6cb;
+}
+.phase-arrow {
+  color: var(--border-strong);
+  font-size: 11px;
+}
+/* 進行中の段階だけ、点がゆっくり脈打つ */
+.phase[data-state="active"] .phase-dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  flex-shrink: 0;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+
+/* 「取得中です」の3点リーダ */
+.dots::after {
+  content: "";
+  animation: dots 1.4s steps(4, end) infinite;
+}
+@keyframes dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+/* ボタンを押した直後の反応。押せたことがすぐ分かるようにする */
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-primary {
+  box-shadow: 0 1px 2px rgba(91, 79, 224, 0.25);
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 2px 8px rgba(91, 79, 224, 0.3);
+}
+/* 実行中のボタンは、進行を示す帯が流れる */
+.btn[data-busy="true"] {
+  position: relative;
+  overflow: hidden;
+}
+.btn[data-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: sweep 1.2s linear infinite;
+}
+
+/* 結果が出たときに、下から出す */
+.fade-up {
+  animation: fadeUp 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 完了したときの一瞬の強調 */
+.flash-ok {
+  animation: flashOk 1.1s ease-out;
+}
+@keyframes flashOk {
+  0% { background: var(--green-soft); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .progress-bar::after,
+  .progress-indeterminate .progress-bar,
+  .phase[data-state="active"] .phase-dot,
+  .dots::after,
+  .btn[data-busy="true"]::after,
+  .spin {
+    animation: none !important;
+  }
+  .fade-up,
+  .flash-ok {
+    animation: none !important;
+  }
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* ===============================================================
+   テーブルの仕上げ
+   =============================================================== */
+table.data thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+table.data td.right,
+table.data th.right {
+  text-align: right;
+}
+table.data tbody tr {
+  transition: background 0.12s;
+}
+.table-scroll {
+  max-height: 640px;
+  overflow-y: auto;
+}
+/* 数字の列は幅を詰めて、名前の列に幅を回す */
+table.data td.tight,
+table.data th.tight {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.toolbar .spacer {
+  flex: 1;
+}
+
+/* 価格レンジなどの補助テキスト */
+.hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.bar-mini {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.bar-mini > i {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+}
+
+/* 商品カードのヘッダ行 */
+.group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.group-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.gs {
+  min-width: 68px;
+}
+.gs-label {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gs-value {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gs-value.muted {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+details.titles > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  list-style: none;
+  margin-top: 8px;
+}
+details.titles > summary::-webkit-details-marker { display: none; }
+details.titles > summary::before {
+  content: "▸ ";
+  color: var(--text-faint);
+}
+details.titles[open] > summary::before { content: "▾ "; }
+details.titles ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* select も .input と同じ見た目に揃える(既定の矢印は残す) */
+select.input {
+  appearance: auto;
+  cursor: pointer;
+  padding-right: 6px;
+}
+select.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 折り返しても崩れないように、深掘り画面のフォーム行は下端を揃える */
+.runner .form-row {
+  align-items: flex-end;
+}
+
+/* ===============================================================
+   ログイン画面
+   サイドバーの無い、中央1枚のカード。
+   =============================================================== */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(91, 79, 224, 0.1), transparent 70%),
+    var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 26px 26px 22px;
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+}
+.auth-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.auth-title svg {
+  color: var(--brand);
+}
+.auth-desc {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.auth-foot {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* 入力欄の中にアイコン／表示切り替えボタンを置く */
+.input-icon {
+  position: relative;
+  display: block;
+}
+.input-icon > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.input-icon > svg ~ .input {
+  padding-left: 30px;
+}
+.input-icon .input {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  padding-right: 38px;
+}
+.input-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 5px;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.input-toggle:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ===============================================================
+   サイドバー下部のログイン情報
+   =============================================================== */
+.sidebar-foot .who {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+}
+.who-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.who-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 4px;
+}
+.nav-step-admin {
+  background: var(--brand-soft);
+  border-color: var(--brand-border);
+  color: var(--brand);
+}
+
+/* ===============================================================
+   会員管理
+   =============================================================== */
+
+/* 切り替えタブ(ランダム発行 / 指定して発行) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.seg-btn:hover {
+  color: var(--text);
+}
+.seg-btn[data-active="true"] {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: var(--shadow);
+}
+
+/* 発行した資格情報のパネル。目立たせて、控え忘れを防ぐ */
+.cred-panel {
+  border: 1px solid var(--brand-border);
+  background: linear-gradient(180deg, var(--brand-soft), var(--surface));
+  border-radius: var(--r-lg);
+  padding: 15px 17px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.cred-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--brand);
+  margin-bottom: 12px;
+}
+.cred-grid {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cred-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 9px 12px;
+}
+.cred-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  width: 76px;
+  flex-shrink: 0;
+}
+.cred-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: all;
+  flex: 1;
+  min-width: 140px;
+  word-break: break-all;
+}
+
+/* 一覧の行内ボタン — アイコンのみを1行で並べる */
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+.row-actions form {
+  display: inline-flex;
+  margin: 0;
+}
+.btn-icon {
+  padding: 6px;
+  gap: 0;
+  min-width: 30px;
+  min-height: 30px;
+  justify-content: center;
+}
+table.data td.actions-col,
+table.data th.actions-col {
+  width: 1%;
+  white-space: nowrap;
+}
+.edit-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  text-align: left;
+}
+/* 会員管理の中央モーダル */
+.modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(20, 24, 36, 0.45);
+  cursor: pointer;
+}
+.modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 420px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 18px 48px rgba(20, 24, 36, 0.18);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+}
+.modal-dialog-wide {
+  width: min(100%, 520px);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14.5px;
+  flex: 1;
+  min-width: 0;
+}
+.modal-title svg {
+  color: var(--brand);
+  flex-shrink: 0;
+}
+.modal-body {
+  padding: 16px;
+}
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-stack {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.modal-stack .field {
+  flex: 1;
+  min-width: 160px;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.modal-message {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.password-row {
+  width: max(100%, 420px);
+  max-width: 720px;
+  margin-left: auto;
+}
+.password-current,
+.password-change-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.password-row-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.password-row-copy svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding-bottom: 8px;
+  cursor: pointer;
+}
+.check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.btn-danger {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: #f3c1bb;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fbdcd8;
+}
+
+.note-ok {
+  background: var(--green-soft);
+  border: 1px solid #bfe6cb;
+  color: var(--green);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ===============================================================
+   3-3 仕入れ候補(AliExpress / 1688)
+   一覧の各行の下に、候補をカードで並べる。
+   画像・価格・一致度を1目で比べられるよう、横並びの小さなカードにする。
+   =============================================================== */
+.sourcing {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.sourcing-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.sourcing-head svg {
+  color: var(--brand);
+}
+
+.cand-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px;
+}
+
+.cand {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+/* 採用中の候補は、どれを選んだか一目で分かるようにする */
+.cand[data-picked] {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+}
+
+.cand-img {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.cand-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.cand-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  text-decoration: none;
+}
+.cand-title:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+.cand-title svg {
+  vertical-align: -1px;
+  margin-left: 3px;
+  color: var(--text-faint);
+}
+
+.cand-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.cand-price {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cand-action {
+  flex-shrink: 0;
+}
+
+.cand-more {
+  margin-top: 8px;
+}
+.cand-more > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.cand-more > .cand-grid {
+  margin-top: 8px;
+}
+
+/* 1688 は商品を取得できないので、検索URLだけを下にまとめる */
+.cand-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* 探し方(タイトル検索 / 画像検索)ごとのまとまり */
+.cand-group + .cand-group {
+  margin-top: 12px;
+}
+.cand-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.cand-group-head svg {
+  color: var(--text-faint);
 }

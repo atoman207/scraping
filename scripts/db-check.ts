@@ -31,7 +31,17 @@ const EXPECTED: { table: string; columns: string[]; migration: string }[] = [
   },
   {
     table: "listings",
-    columns: ["is_new", "updated_at", "shipping_method_id", "is_shops", "matched_keyword"],
+    columns: ["is_new", "updated_at", "shipping_method_id", "is_shops", "matched_keyword", "ship_status", "ship_class"],
+    migration: "supabase/schema.sql",
+  },
+  {
+    table: "sellers",
+    columns: ["avatar_url", "listing_count", "good_ratings", "bad_ratings", "registered_at"],
+    migration: "supabase/schema.sql",
+  },
+  {
+    table: "product_groups",
+    columns: ["stock_count", "min_price", "max_price", "first_listed_at", "latest_sold_at", "sold_per_month", "shipping_method", "ship_status", "ship_class", "representative_listing_url", "distinct_title_count", "merged_titles"],
     migration: "supabase/schema.sql",
   },
   {
@@ -40,8 +50,34 @@ const EXPECTED: { table: string; columns: string[]; migration: string }[] = [
     migration: "supabase/schema.sql",
   },
   {
+    table: "app_users",
+    columns: ["username", "password_hash", "password_enc", "role", "is_active"],
+    migration: "supabase/schema.sql",
+  },
+  {
+    table: "app_sessions",
+    columns: ["token", "user_id", "expires_at"],
+    migration: "supabase/schema.sql",
+  },
+  {
     table: "jobs",
     columns: ["kind", "params", "status", "progress", "log", "result", "heartbeat_at", "seq"],
+    migration: "supabase/schema.sql",
+  },
+  {
+    // 3-3 仕入れ候補。無いと深掘りリストの「仕入れ候補を探す」が保存で止まる
+    table: "sourcing_candidates",
+    columns: [
+      "product_group_id",
+      "source_platform",
+      "search_mode",
+      "title",
+      "price_cny",
+      "url",
+      "match_score",
+      "rank",
+      "is_picked",
+    ],
     migration: "supabase/schema.sql",
   },
 ];

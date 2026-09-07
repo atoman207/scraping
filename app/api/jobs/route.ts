@@ -13,6 +13,20 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { enqueue, getJob, listJobs, queueAhead, removeJob, type JobKind } from "../../../lib/jobs-db";
+import { currentUser } from "../../../lib/auth";
+// Playwright を持ち込まない軽い2つだけを読む(実行はワーカー側なので、ここでは不要)
+import { normalizeSellerId } from "../../../lib/scraper/seller-id";
+import { parseSourcingModes } from "../../../lib/scraper/types";
+
+/**
+ * ログインしている人だけが使える。
+ * middleware はCookieの有無しか見ていないので、APIの入口でも必ず確認する。
+ */
+async function denyIfSignedOut() {
+  const user = await currentUser().catch(() => null);
+  if (user) return null;
+  return NextResponse.json({ error: "ログインが必要です。" }, { status: 401 });
+}
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +37,9 @@ function clamp(n: number, lo: number, hi: number) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -55,11 +72,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ jobId: job.id, seq: job.seq, label });
   }
 
-  // 3-2 / 3-3 はワーカー側の実装が済み次第ここに追加する
+  if (kind === "seller") {
+    // プロフィールURLを貼られても動くようにする(画面・CLIと同じ関数を通す)
+    const sellerExternalId = normalizeSellerId(String(body.seller_external_id ?? ""));
+    if (!sellerExternalId) {
+      return NextResponse.json({ error: "セラーIDが必要です" }, { status: 400 });
+    }
+    // 出品の取得は最大300件、実送料は最大20件(標準3件 / 詳細20件)
+    const max = clamp(Number(body.max ?? 100), 1, 300);
+    const shipping = clamp(Number(body.shipping ?? 3), 0, 20);
+    const label =
+      `セラー深掘り：${sellerExternalId}` +
+      `（最大${max}件・実送料${shipping === 0 ? "なし" : `${shipping}件`}）`;
+
+    const job = await enqueue(kind, { seller_external_id: sellerExternalId, max, shipping }, label);
+    return NextResponse.json({ jobId: job.id, seq: job.seq, label });
+  }
+
+  if (kind === "sourcing") {
+    const productGroupId = Number(body.product_group_id);
+    if (!Number.isFinite(productGroupId) || productGroupId <= 0) {
+      return NextResponse.json({ error: "product_group_id が必要です" }, { status: 400 });
+    }
+    const modes = parseSourcingModes(body.modes);
+    if (!modes.length) {
+      return NextResponse.json({ error: "探し方(タイトル/画像)を1つ以上選んでください" }, { status: 400 });
+    }
+    const limit = clamp(Number(body.limit ?? 12), 1, 40);
+    const apply = Boolean(body.apply);
+    const label =
+      `仕入れ候補：商品#${productGroupId}` +
+      `（${modes.map((m) => (m === "title" ? "タイトル検索" : "画像検索")).join("・")}）`;
+
+    const job = await enqueue(kind, { product_group_id: productGroupId, modes, limit, apply }, label);
+    return NextResponse.json({ jobId: job.id, seq: job.seq, label });
+  }
+
+  // KINDS を増やしたのに分岐を書き忘れた場合だけここへ来る
   return NextResponse.json({ error: `${kind} はまだ受け付けていません` }, { status: 400 });
 }
 
 export async function GET(req: NextRequest) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const idParam = req.nextUrl.searchParams.get("id");
   if (idParam) {
     const job = await getJob(Number(idParam));
@@ -75,6 +131,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = await denyIfSignedOut();
+  if (denied) return denied;
+
   const id = Number(req.nextUrl.searchParams.get("id"));
   if (!Number.isFinite(id)) return NextResponse.json({ error: "id が不正です" }, { status: 400 });
   const ok = await removeJob(id);

@@ -20,7 +20,13 @@ import { claimJob, finishJob, updateProgress, type Job, type JobProgress } from 
 import { MercariScraper } from "../lib/scraper/mercari";
 import { createSearch, saveListings, saveSellerResults, upsertSellers } from "../lib/scraper/persist";
 import { aggregateBySeller } from "../lib/engine/aggregate";
-import { BlockedError } from "../lib/scraper/types";
+import { BlockedError, parseSourcingModes } from "../lib/scraper/types";
+import {
+  DEFAULT_MAX_ITEMS,
+  DEFAULT_SHIPPING_TOP,
+  runSellerDeepdive,
+} from "../lib/scraper/seller-run";
+import { runSourcing } from "../lib/scraper/sourcing-run";
 
 const WORKER_ID = `${os.hostname()}-${process.pid}`;
 /**
@@ -161,16 +167,108 @@ async function runSearch(job: Job) {
   }
 }
 
+// ---------------------------------------------------------------- 3-2
+async function runSellerJob(job: Job) {
+  const p = job.params as {
+    seller_external_id?: string;
+    max?: number;
+    shipping?: number;
+  };
+  const sellerExternalId = String(p.seller_external_id ?? "").trim();
+  if (!sellerExternalId) throw new Error("セラーIDが指定されていません");
+
+  const log = loggerFor(job.id);
+  const result = await runSellerDeepdive({
+    sellerExternalId,
+    maxItems: Math.min(Math.max(Number(p.max ?? DEFAULT_MAX_ITEMS), 1), 300),
+    shippingTop: Math.min(Math.max(Number(p.shipping ?? DEFAULT_SHIPPING_TOP), 0), 20),
+    intervalMs: PAGE_INTERVAL_MS,
+    log,
+    onPhase: (ph) => {
+      void setPhase(job.id, { phase: ph.phase, i: ph.done, n: ph.total, label: ph.label });
+    },
+  });
+
+  // 出品が0件だったときは「失敗」ではない(セラーIDの取り違えか、出品を全部取り下げた状態)。
+  // 何も起きなかったことが分かるように、理由を結果に残して done で終える。
+  if (!result.listings) {
+    await finishJob(job.id, {
+      status: "done",
+      result: { seller_external_id: result.seller_external_id, listings: 0, note: result.note },
+    });
+    return;
+  }
+
+  await finishJob(job.id, {
+    status: "done",
+    result: {
+      seller_external_id: result.seller_external_id,
+      seller_id: result.seller_id,
+      seller_name: result.seller_name,
+      listings: result.listings,
+      sold: result.sold,
+      saved: result.saved,
+      shipping: result.shipping,
+      groups: result.groups,
+      repeat_groups: result.repeat_groups,
+    },
+    resultHref: result.result_href ?? undefined,
+  });
+  log(
+    `完了しました(出品${result.listings}件 / 新規${result.saved}件 / ` +
+      `鉄板商品${result.repeat_groups}件)`
+  );
+}
+
+// ---------------------------------------------------------------- 3-3
+async function runSourcingJob(job: Job) {
+  const p = job.params as {
+    product_group_id?: number;
+    modes?: unknown;
+    apply?: boolean;
+    limit?: number;
+  };
+  const productGroupId = Number(p.product_group_id);
+  if (!productGroupId) throw new Error("product_group_id が指定されていません");
+
+  const log = loggerFor(job.id);
+  const result = await runSourcing({
+    productGroupId,
+    modes: parseSourcingModes(p.modes),
+    limit: Math.min(Math.max(Number(p.limit ?? 12), 1), 40),
+    apply: Boolean(p.apply),
+    intervalMs: PAGE_INTERVAL_MS,
+    log,
+    onPhase: (ph) => {
+      void setPhase(job.id, { phase: ph.phase, i: ph.done, n: ph.total, label: ph.label });
+    },
+  });
+
+  await finishJob(job.id, {
+    status: "done",
+    result: {
+      product_group_id: result.product_group_id,
+      candidates: result.candidates,
+      by_mode: result.by_mode,
+      applied: result.applied,
+    },
+    resultHref: "/deepdive-list",
+  });
+  log(`完了しました(候補${result.candidates}件)`);
+}
+
 // ---------------------------------------------------------------- 実行ループ
 async function handle(job: Job) {
   stamp(`ジョブ #${job.seq ?? job.id} [${job.kind}] を開始: ${job.label ?? ""}`);
   try {
     if (job.kind === "search") {
       await runSearch(job);
+    } else if (job.kind === "seller") {
+      await runSellerJob(job);
+    } else if (job.kind === "sourcing") {
+      await runSourcingJob(job);
     } else {
-      // 3-2 / 3-3 は既存のCLI(scrape:seller / scrape:sourcing)を使う。
-      // ワーカー経由での実行は順次このファイルに寄せていく。
-      throw new Error(`このワーカーはまだ ${job.kind} に対応していません`);
+      throw new Error(`このワーカーは ${job.kind} に対応していません`);
     }
   } catch (e) {
     const msg = String(e instanceof Error ? e.message : e).slice(0, 800);

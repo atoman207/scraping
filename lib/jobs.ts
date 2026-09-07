@@ -11,12 +11,48 @@
 
 export type JobStatus = "running" | "done" | "error";
 
+/**
+ * 実行中のどの段階にいるか。
+ *
+ * 画面はこれを見て進捗バーと段階表示を描く。ログの文字列から推測すると
+ * ログの言い回しを変えるたびに画面が壊れるので、構造化して持つ。
+ */
+export type JobPhase =
+  /** 検索結果ページを読んでいる(3-1) */
+  | "crawl"
+  /** セラー名を1人ずつ解決している(3-1) */
+  | "names"
+  /** セラーの出品一覧を読んでいる(3-2) */
+  | "list"
+  /** 実送料を商品ページから取っている(3-2) */
+  | "ship"
+  /** 集計している */
+  | "aggregate"
+  /** DBへ書いている */
+  | "save"
+  /** 鉄板商品を抽出している(3-2) */
+  | "cluster"
+  /** タイトルで仕入れ候補を探している(3-3) */
+  | "title"
+  /** 画像で仕入れ候補を探している(3-3) */
+  | "image";
+
+export type JobProgress = {
+  phase: JobPhase;
+  /** 済んだ数 / 全体。全体が分からない段階では total を省く */
+  done?: number;
+  total?: number;
+  /** 「3/10ページ目」のような補足 */
+  label?: string;
+};
+
 export type Job = {
   id: string;
   kind: "search" | "seller" | "sourcing";
   label: string;
   status: JobStatus;
   log: string[];
+  progress?: JobProgress;
   error?: string;
   /** 完了後、画面がここへ遷移すると結果が見られる */
   resultHref?: string;
@@ -58,10 +94,17 @@ export function appendLog(id: string, line: string): void {
   if (job.log.length > 400) job.log.splice(0, job.log.length - 400);
 }
 
+/** 現在の段階を更新する。画面の進捗バーと段階表示がこれを見る */
+export function setProgress(id: string, progress: JobProgress): void {
+  const job = store.get(id);
+  if (!job) return;
+  job.progress = progress;
+}
+
 export function finishJob(id: string, patch: Partial<Pick<Job, "status" | "error" | "resultHref">>): void {
   const job = store.get(id);
   if (!job) return;
-  Object.assign(job, patch, { finishedAt: Date.now() });
+  Object.assign(job, patch, { finishedAt: Date.now(), progress: undefined });
 }
 
 /** 直近のジョブ(画面の初期表示用) */

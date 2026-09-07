@@ -1,17 +1,33 @@
 import { revalidatePath } from "next/cache";
-import { getSupabase, must, getDeepdiveListV2, getSettings, Settings, DeepdiveComputed } from "../../lib/db";
-import { TARIFF_CATEGORIES } from "../../lib/engine/cost";
-import ScrapeRunner from "../ScrapeRunner";
+import { redirect } from "next/navigation";
+import { currentUser } from "../../../lib/auth";
+import {
+  getSupabase,
+  must,
+  getDeepdiveListV2,
+  getSettings,
+  getSourcingCandidates,
+  Settings,
+  DeepdiveComputed,
+  SourcingCandidateRow,
+} from "../../../lib/db";
+import { TARIFF_CATEGORIES } from "../../../lib/engine/cost";
+import ScrapeRunner from "../../ScrapeRunner";
 import {
   IconAlert,
   IconCalculator,
   IconCart,
+  IconCheck,
   IconClock,
   IconExternal,
+  IconGlobe,
+  IconImage,
   IconInbox,
+  IconSearch,
   IconSettings,
+  IconStar,
   IconTag,
-} from "../icons";
+} from "../../icons";
 
 export const dynamic = "force-dynamic"; // DBの最新状態を毎回読むため静的化しない
 
@@ -25,6 +41,8 @@ function numOrNull(v: FormDataEntryValue | null): number | null {
 
 async function updateCost(formData: FormData) {
   "use server";
+  // ログインしていない人にデータを書き換えさせない(画面を通らず直接叩かれる経路への備え)
+  if (!(await currentUser())) redirect("/login");
   const id = Number(formData.get("deepdive_id"));
   must(
     await getSupabase()
@@ -52,6 +70,8 @@ async function updateCost(formData: FormData) {
 
 async function updateSettings(formData: FormData) {
   "use server";
+  // ログインしていない人にデータを書き換えさせない(画面を通らず直接叩かれる経路への備え)
+  if (!(await currentUser())) redirect("/login");
   must(
     await getSupabase()
       .from("settings")
@@ -70,8 +90,53 @@ async function updateSettings(formData: FormData) {
 
 async function removeItem(formData: FormData) {
   "use server";
+  // ログインしていない人にデータを書き換えさせない(画面を通らず直接叩かれる経路への備え)
+  if (!(await currentUser())) redirect("/login");
   const id = Number(formData.get("deepdive_id"));
   must(await getSupabase().from("deepdive_items").delete().eq("id", id).select("id"));
+  revalidatePath("/deepdive-list");
+}
+
+/**
+ * 3-3: 検索で出てきた候補を、この行の仕入先として採用する。
+ *
+ * 自動検索(「仕入れ候補を探す」)は入力済みの値を書き換えないが、
+ * ここは利用者がその候補を選んだ操作なので、単価と仕入先URLを**上書きする**。
+ */
+async function pickCandidate(formData: FormData) {
+  "use server";
+  // ログインしていない人にデータを書き換えさせない(画面を通らず直接叩かれる経路への備え)
+  if (!(await currentUser())) redirect("/login");
+  const deepdiveId = Number(formData.get("deepdive_id"));
+  const candidateId = Number(formData.get("candidate_id"));
+  if (!deepdiveId || !candidateId) return;
+
+  const sb = getSupabase();
+  const cand = must(
+    await sb
+      .from("sourcing_candidates")
+      .select("id, product_group_id, source_platform, url, price_cny")
+      .eq("id", candidateId)
+      .single()
+  ) as { id: number; product_group_id: number; source_platform: string; url: string; price_cny: number | null };
+
+  const patch: Record<string, unknown> = {
+    source_platform: cand.source_platform,
+    source_url: cand.url,
+  };
+  // 価格が読めなかった候補(1688の検索リンクなど)は、単価まで消してしまわない
+  if (cand.price_cny !== null) patch.unit_cost_cny = cand.price_cny;
+  must(await sb.from("deepdive_items").update(patch).eq("id", deepdiveId).select("id"));
+
+  // 採用の印はその商品につき1件だけにする
+  must(
+    await sb
+      .from("sourcing_candidates")
+      .update({ is_picked: false })
+      .eq("product_group_id", cand.product_group_id)
+      .select("id")
+  );
+  must(await sb.from("sourcing_candidates").update({ is_picked: true }).eq("id", candidateId).select("id"));
   revalidatePath("/deepdive-list");
 }
 
@@ -97,13 +162,193 @@ function breakdownText(item: DeepdiveComputed): string | null {
   return parts.join(" ＋ ") + ` ＝ ${r(item.cost_jpy ?? 0)}`;
 }
 
+// ---------------------------------------------------------------- 3-3 仕入れ候補
+
+const MODE_LABEL: Record<string, string> = {
+  title: "タイトル検索",
+  image: "画像検索",
+  link: "検索リンク",
+};
+
+/** 候補1件のカード。押せば仕入先としてこの行に入る */
+function CandidateCard({ c, deepdiveId }: { c: SourcingCandidateRow; deepdiveId: number }) {
+  return (
+    <div className="cand" data-picked={c.is_picked || undefined}>
+      {c.image_url ? (
+        <img className="cand-img" src={c.image_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+      ) : (
+        <div className="cand-img" />
+      )}
+      <div className="cand-body">
+        <a className="cand-title" href={c.url} target="_blank" rel="noreferrer" title={c.title}>
+          {c.title}
+          <IconExternal size={11} />
+        </a>
+        <div className="cand-meta">
+          <span className="cand-price">
+            {c.price_cny !== null ? `${c.price_cny}元` : "価格不明"}
+            {c.price_jpy !== null && (
+              <span className="hint"> (¥{Math.round(c.price_jpy).toLocaleString()})</span>
+            )}
+          </span>
+          {c.match_score !== null && (
+            <span
+              className={`pill ${c.match_score >= 60 ? "pill-good" : c.match_score >= 30 ? "pill-info" : "pill-mute"}`}
+              title="元の商品タイトルとどれくらい合っているか"
+            >
+              一致 {Math.round(c.match_score)}%
+            </span>
+          )}
+          <span className="pill pill-mute">
+            {c.search_mode === "image" ? <IconImage size={10} /> : <IconSearch size={10} />}
+            {MODE_LABEL[c.search_mode] ?? c.search_mode}
+          </span>
+          {c.orders_count !== null && <span className="hint">{c.orders_count.toLocaleString()}点販売</span>}
+          {c.rating !== null && (
+            <span className="hint" style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+              <IconStar size={10} />
+              {c.rating}
+            </span>
+          )}
+          {c.is_ad && (
+            <span className="pill pill-warn" title="検索順位ではなく広告枠で上に出ている商品です">
+              広告
+            </span>
+          )}
+        </div>
+      </div>
+      <form action={pickCandidate} className="cand-action">
+        <input type="hidden" name="deepdive_id" value={deepdiveId} />
+        <input type="hidden" name="candidate_id" value={c.id} />
+        <button type="submit" className={c.is_picked ? "btn btn-ghost btn-sm" : "btn btn-dark btn-sm"}>
+          {c.is_picked ? <IconCheck size={12} /> : <IconCart size={12} />}
+          {c.is_picked ? "採用中" : "採用"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/** 探し方ごとのまとまり。先頭6件を出し、残りは畳んでおく */
+function CandidateGroup({
+  label,
+  icon,
+  list,
+  deepdiveId,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  list: SourcingCandidateRow[];
+  deepdiveId: number;
+}) {
+  if (!list.length) return null;
+  const top = list.slice(0, 6);
+  const rest = list.slice(6);
+  return (
+    <div className="cand-group">
+      <div className="cand-group-head">
+        {icon}
+        {label}
+        <span className="badge badge-muted">{list.length}件</span>
+      </div>
+      <div className="cand-grid">
+        {top.map((c) => (
+          <CandidateCard key={c.id} c={c} deepdiveId={deepdiveId} />
+        ))}
+      </div>
+      {rest.length > 0 && (
+        <details className="cand-more">
+          <summary>残り{rest.length}件を見る</summary>
+          <div className="cand-grid">
+            {rest.map((c) => (
+              <CandidateCard key={c.id} c={c} deepdiveId={deepdiveId} />
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 仕入れ候補の一覧。
+ *
+ * タイトル検索と画像検索は**分けて出す**。
+ * 画像検索は「見た目は同じだがタイトルが全然違う商品」を拾うのが値打ちで、
+ * 一致度で一緒に並べると下に沈んで見えなくなるため。
+ *
+ * 商品そのものを取れるのはAliExpressだけなので、1688 は
+ * 「人が開けばそのまま検索できるURL」を下にまとめて出す(ログインが必要なため)。
+ */
+function SourcingSection({
+  item,
+  candidates,
+}: {
+  item: DeepdiveComputed;
+  candidates: SourcingCandidateRow[];
+}) {
+  const byTitle = candidates.filter((c) => c.search_mode === "title");
+  const byImage = candidates.filter((c) => c.search_mode === "image");
+  const links = candidates.filter((c) => c.search_mode === "link");
+  const products = byTitle.length + byImage.length;
+  const fetchedAt = candidates[0]?.fetched_at ?? null;
+  const query = byTitle[0]?.query ?? null;
+
+  return (
+    <div className="sourcing">
+      <div className="sourcing-head">
+        <IconGlobe size={14} />
+        仕入れ候補
+        <span className="badge badge-muted">{products}件</span>
+        {query && <span className="hint">検索語「{query}」</span>}
+        {fetchedAt && <span className="hint">取得 {fetchedAt.slice(0, 16)}</span>}
+      </div>
+
+      {products > 0 ? (
+        <>
+          <CandidateGroup
+            label="タイトル検索"
+            icon={<IconSearch size={12} />}
+            list={byTitle}
+            deepdiveId={item.deepdive_id}
+          />
+          <CandidateGroup
+            label="画像検索"
+            icon={<IconImage size={12} />}
+            list={byImage}
+            deepdiveId={item.deepdive_id}
+          />
+        </>
+      ) : (
+        <p className="hint" style={{ margin: "2px 0 8px" }}>
+          まだ候補がありません。下のボタンでAliExpressを検索してください。
+        </p>
+      )}
+
+      {links.length > 0 && (
+        <div className="cand-links">
+          {links.map((c) => (
+            <a key={c.id} className="link" href={c.url} target="_blank" rel="noreferrer">
+              {c.title}
+              <IconExternal size={11} />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function DeepdiveListPage() {
   let items: DeepdiveComputed[] = [];
   let settings: Settings | null = null;
+  let candidates = new Map<number, SourcingCandidateRow[]>();
   let error: string | null = null;
   try {
     items = await getDeepdiveListV2();
     settings = await getSettings();
+    // 3-3 の候補は1回でまとめて読む(行ごとに問い合わせない)
+    candidates = await getSourcingCandidates(items.map((i) => i.product_group_id));
   } catch (e) {
     error = String(e);
   }
@@ -426,13 +671,16 @@ export default async function DeepdiveListPage() {
                 </div>
               )}
 
+              <SourcingSection item={item} candidates={candidates.get(item.product_group_id) ?? []} />
+
               <div style={{ marginTop: 12 }}>
                 <ScrapeRunner
                   kind="sourcing"
                   payload={{ product_group_id: item.product_group_id, apply: true }}
-                  buttonLabel="AliExpressで仕入れ候補を探す"
-                  title="仕入れ候補の自動検索"
-                  description="商品タイトルからAliExpressを検索し、最安候補の価格(元)と仕入先URLをこの行に反映します。1688は検索リンクのみ表示します。"
+                  buttonLabel="仕入れ候補を探す"
+                  title="仕入れ候補の自動検索(AliExpress / 1688)"
+                  description="商品タイトルと商品画像でAliExpressを検索し、候補を上に並べます。単価が未入力の場合だけ、最有力候補を自動で反映します(入力済みの値は変えません)。1688はログインが必要なため検索リンクのみです。"
+                  withSourcingOptions
                   compact
                 />
               </div>

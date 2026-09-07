@@ -22,7 +22,7 @@ export type JobStatus = "queued" | "running" | "done" | "error" | "canceled";
 /** 進捗。画面はこれを見て「今どの段階か」を出す */
 export type JobProgress = {
   /** crawl=巡回中 / names=セラー名取得中 / aggregate=集計中 / save=保存中 / deep=深掘り中 / ship=送料取得中 */
-  phase: "crawl" | "names" | "aggregate" | "save" | "deep" | "ship";
+  phase: "crawl" | "names" | "aggregate" | "save" | "deep" | "ship" | "list" | "cluster" | "title" | "image";
   /** 何件目か(1始まり) */
   i?: number;
   /** 全体件数 */

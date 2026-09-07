@@ -1,78 +1,92 @@
 /**
- * 発注仕様書 3-3: AliExpress / 1688 連携
- * 鉄板商品(product_groups)のタイトルから仕入れ候補を検索し、結果を表示する。
- * --apply を付けると、最安候補の価格と仕入先URLを深掘りリストに書き込む。
+ * 3-3 仕入れ候補の検索(コマンドライン)。
  *
- *   npm run scrape:sourcing -- --group 1
- *   npm run scrape:sourcing -- --group 1 --apply
+ *   npm run scrape:sourcing -- --group 12
+ *   npm run scrape:sourcing -- --group 12 --mode title --limit 20 --apply
+ *   npm run scrape:sourcing -- --seller 5          # そのセラーの鉄板商品をまとめて
+ *
+ * 画面のボタン(深掘りリスト)と同じ処理を、常駐サーバーのコマンドラインから叩くためのもの。
+ * Vercelなど画面側でブラウザを起動できない構成では、こちらか npm run worker を使う。
+ *
+ * オプション
+ *   --group  <id>    product_groups.id。複数回指定できる
+ *   --seller <id>    sellers.id。そのセラーの鉄板商品(is_repeat=1)をまとめて処理する
+ *   --mode   <m>     title / image。既定は両方
+ *   --limit  <n>     探し方ごとの取得件数(既定12)
+ *   --apply          単価が未入力の深掘りリストに最有力候補を反映する
+ *   --interval <ms>  ページを開く間隔(既定3000)
  */
 import "./_env";
-import { parseArgs, argOne, requireArg } from "./_env";
-import { AliExpressSourcing, Alibaba1688Sourcing } from "../lib/scraper/sourcing";
+import { parseArgs, argOne } from "./_env";
 import { getSupabase, must } from "../lib/supabase";
-import { getSettings } from "../lib/db";
+import { runSourcing } from "../lib/scraper/sourcing-run";
+import { BlockedError, parseSourcingModes } from "../lib/scraper/types";
 
 const args = parseArgs(process.argv.slice(2));
-const groupId = Number(requireArg(args, "group"));
-const apply = argOne(args, "apply") !== undefined;
-const limit = Number(argOne(args, "limit") ?? 8);
+const limit = Number(argOne(args, "limit") ?? 12);
+const intervalMs = Number(argOne(args, "interval") ?? 3000);
+const apply = "apply" in args;
+const modes = args.mode?.length ? parseSourcingModes(args.mode) : (["title", "image"] as const).slice();
+
+async function resolveGroupIds(): Promise<number[]> {
+  const direct = (args.group ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  const sellerId = Number(argOne(args, "seller") ?? 0);
+  if (!sellerId) return direct;
+
+  // セラー指定のときは鉄板商品(2回以上出品)だけを対象にする。
+  // 単発の出品まで仕入れ候補を探しても、判断材料にならないため。
+  const rows = (must(
+    await getSupabase()
+      .from("product_groups")
+      .select("id")
+      .eq("seller_id", sellerId)
+      .eq("is_repeat", 1)
+      .order("sold_count", { ascending: false })
+  ) ?? []) as { id: number }[];
+  return [...new Set([...direct, ...rows.map((r) => r.id)])];
+}
 
 async function main() {
-  const sb = getSupabase();
-  const group = must(
-    await sb.from("product_groups").select("id, representative_title").eq("id", groupId).single()
-  ) as { id: number; representative_title: string };
-
-  const settings = await getSettings();
-  console.log(`\n=== 3-3 仕入れ候補検索 ===`);
-  console.log(`対象: ${group.representative_title}`);
-  console.log(`為替: ${settings.exchange_rate_jpy_per_cny} 円/元\n`);
-
-  const ae = new AliExpressSourcing(settings.exchange_rate_jpy_per_cny, { log: (m) => console.log(m) });
-  await ae.start();
-  let candidates;
-  try {
-    candidates = await ae.searchCandidates(group.representative_title, limit);
-  } finally {
-    await ae.close();
+  const groupIds = await resolveGroupIds();
+  if (!groupIds.length) {
+    console.error("対象がありません。--group <product_groups.id> か --seller <sellers.id> を指定してください。");
+    process.exit(1);
+  }
+  if (!modes.length) {
+    console.error("--mode は title / image のいずれかです。");
+    process.exit(1);
   }
 
-  console.log("\n--- AliExpress ---");
-  for (const [i, c] of candidates.entries()) {
-    console.log(`${String(i + 1).padStart(2)}. ${c.price_cny !== null ? `${c.price_cny}元` : "価格不明"}  ${c.title.slice(0, 60)}`);
-    console.log(`    ${c.url}`);
-  }
+  console.log(`対象${groupIds.length}件 / 探し方: ${modes.join("・")} / 各${limit}件${apply ? " / 反映あり" : ""}`);
 
-  const cn = new Alibaba1688Sourcing();
-  console.log("\n--- 1688(ログインが必要なため検索リンクのみ) ---");
-  for (const c of await cn.searchCandidates(group.representative_title)) {
-    console.log(`  ${c.title}\n    ${c.url}`);
-  }
-
-  if (apply) {
-    const cheapest = candidates.filter((c) => c.price_cny !== null).sort((a, b) => a.price_cny! - b.price_cny!)[0];
-    if (!cheapest) {
-      console.log("\n--apply: 価格が取れた候補が無いため書き込みませんでした。");
-      return;
+  let ok = 0;
+  let ng = 0;
+  for (const [i, id] of groupIds.entries()) {
+    console.log(`\n=== [${i + 1}/${groupIds.length}] product_group #${id} ===`);
+    try {
+      await runSourcing({
+        productGroupId: id,
+        modes: modes as ("title" | "image")[],
+        limit,
+        apply,
+        intervalMs,
+        log: (m) => console.log(m),
+      });
+      ok++;
+    } catch (e) {
+      ng++;
+      if (e instanceof BlockedError) {
+        console.error(`[中断] ${e.message}`);
+        console.error(`  URL: ${e.url}`);
+        console.error("  断られているので、ここで止めます。時間をおいて実行し直してください。");
+        break;
+      }
+      console.error(`[エラー] ${String(e instanceof Error ? e.message : e).slice(0, 300)}`);
     }
-    const items = must(
-      await sb.from("deepdive_items").select("id").eq("product_group_id", groupId)
-    ) as { id: number }[];
-    if (!items.length) {
-      console.log("\n--apply: この鉄板商品はまだ深掘りリストに保存されていません。");
-      return;
-    }
-    for (const it of items) {
-      must(
-        await sb
-          .from("deepdive_items")
-          .update({ unit_cost_cny: cheapest.price_cny, source_platform: "aliexpress", source_url: cheapest.url })
-          .eq("id", it.id)
-          .select("id")
-      );
-    }
-    console.log(`\n--apply: 深掘りリスト${items.length}件に ${cheapest.price_cny}元 / ${cheapest.url} を反映しました。`);
   }
+
+  console.log(`\n完了: 成功${ok}件 / 失敗${ng}件`);
+  if (ng) process.exitCode = 1;
 }
 
 main().catch((e) => {

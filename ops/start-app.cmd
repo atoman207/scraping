@@ -21,6 +21,10 @@ if errorlevel 1 (
 
 REM PORT を変えたいときは、この行の 3000 を書き換える
 set PORT=3000
+
+REM Show the URLs other devices can use (messages live in lan-access.ps1).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lan-access.ps1" -Action show -Port %PORT%
+
 call npm run start
 
 pause

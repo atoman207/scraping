@@ -30,6 +30,8 @@ export type ScrapedSeller = {
   rating: number | null;
   review_count: number | null;
   profile_url: string | null;
+  /** プロフィール画像のURL。設定していないセラーはメルカリ既定の画像になる */
+  avatar_url?: string | null;
 };
 
 /**
@@ -66,25 +68,56 @@ export interface SellerDeepdiveAdapter {
 
 /**
  * 発注仕様書 3-3: AliExpress / 1688 連携
- * 鉄板商品のタイトルから、仕入れ候補を検索して提示する。
+ * 鉄板商品のタイトル・画像から、仕入れ候補を検索して提示する。
  */
+
+/** 仕入れ候補を探す先 */
+export type SourcingPlatform = "aliexpress" | "1688";
+
+/**
+ * どうやって見つけた候補か。
+ *   title … 商品タイトルから作った検索語で探した
+ *   image … 商品画像をアップロードして類似画像から探した
+ *   link  … 検索そのものはできないので、人が開くための検索URLを組み立てただけ
+ */
+export type SourcingMode = "title" | "image" | "link";
+
 export type SourcingCandidate = {
-  source_platform: "aliexpress" | "1688";
+  source_platform: SourcingPlatform;
+  search_mode: SourcingMode;
+  /** 実際に投げた検索語、または画像検索の結果URL(あとから同じ検索を開き直せるように) */
+  query: string | null;
+  /** サイト側の商品ID(AliExpressの数字ID)。重複判定に使う */
+  external_id: string | null;
   title: string;
-  /** 表示通貨のままの価格(AliExpress=USD, 1688=CNY) */
+  /** 表示通貨のままの価格 */
   price: number | null;
-  currency: "USD" | "CNY" | null;
+  currency: "JPY" | "USD" | "CNY" | null;
+  /** 円換算(AliExpressは日本向け表示が円なので、たいていそのまま) */
+  price_jpy: number | null;
   /** 仕入単価(元)換算。深掘りリストの unit_cost_cny にそのまま入れられる */
   price_cny: number | null;
   url: string;
   image_url: string | null;
   min_order_qty: number | null;
+  /** 「1,000+ 点販売」の数字。売れている度合いの目安 */
+  orders_count: number | null;
+  rating: number | null;
+  /** 広告枠の商品か(検索順位ではなく出稿で上に出ているもの) */
+  is_ad: boolean;
+  /** 元の商品タイトルとの一致度 0-100。並べ替えと目視確認の手がかり */
+  match_score: number | null;
 };
 
 export interface SourcingAdapter {
   readonly platformName: string;
   /** 商品タイトルから仕入れ候補を検索する */
   searchCandidates(title: string, limit?: number): Promise<SourcingCandidate[]>;
+  /**
+   * 商品画像から類似商品を検索する。
+   * 画像検索に対応していないプラットフォームは実装しない(呼び出し側で分岐する)。
+   */
+  searchByImage?(imageUrl: string, limit?: number): Promise<SourcingCandidate[]>;
 }
 
 /** サイト側にブロックされた(bot判定・レート制限)ことを表すエラー */
@@ -97,4 +130,16 @@ export class BlockedError extends Error {
     super(message);
     this.name = "BlockedError";
   }
+}
+
+/**
+ * 3-3 の「探し方」を、外から来た値(APIのリクエストなど)から安全に読む。
+ * 指定が無ければタイトル検索と画像検索の両方。知らない値は黙って落とす。
+ */
+export function parseSourcingModes(input: unknown): ("title" | "image")[] {
+  if (!Array.isArray(input)) return ["title", "image"];
+  const out = input
+    .map((m) => String(m))
+    .filter((m): m is "title" | "image" => m === "title" || m === "image");
+  return [...new Set(out)];
 }
