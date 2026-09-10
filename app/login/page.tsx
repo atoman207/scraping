@@ -67,19 +67,16 @@ export default async function LoginPage({
     <div className="auth-shell">
       <div className="auth-card fade-up">
         <div className="auth-brand">
-          <span className="brand-mark">
-            <img src="/logo.png" alt="" width={28} height={28} />
-          </span>
-          転売リサーチ
+          <img src="/logo.png" alt="" width={64} height={64} />
+          <b>転売リサーチ</b>
         </div>
-        <h1 className="auth-title">
-          <IconLock size={17} />
-          ログイン
-        </h1>
-        <p className="auth-desc">
-          ログインIDとパスワードは<strong>管理者が発行</strong>します。ご自身での登録はできません。
-          お持ちでない場合は管理者にご連絡ください。
+        <p className="auth-desc" style={{ marginBottom: 20 }}>
+          メルカリで繰り返し売れている鉄板商品を見つけ、仕入れの採算まで計算するリサーチツールです。
         </p>
+        <h1 className="auth-title">
+          <IconLock size={15} />
+          会員ログイン
+        </h1>
 
         {setupError && (
           <div className="note note-error" style={{ marginBottom: 14 }}>
@@ -91,7 +88,8 @@ export default async function LoginPage({
         <LoginForm action={signIn} next={safeNext(searchParams.next)} />
 
         <p className="auth-foot">
-          管理者の方は、ログイン後に <code>/admin</code> から利用者を発行できます。
+          アカウントは管理者が発行します。ご自身での登録はできません。
+          うまくいかないときは管理者へご連絡ください。
         </p>
       </div>
     </div>

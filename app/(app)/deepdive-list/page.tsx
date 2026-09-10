@@ -15,7 +15,6 @@ import { TARIFF_CATEGORIES } from "../../../lib/engine/cost";
 import ScrapeRunner from "../../ScrapeRunner";
 import {
   IconAlert,
-  IconCalculator,
   IconCart,
   IconCheck,
   IconClock,
@@ -359,10 +358,6 @@ export default async function DeepdiveListPage() {
   return (
     <div className="page-wide">
       <div className="page-head">
-        <h1 className="page-title">
-          <IconCalculator size={20} />
-          深掘りリスト
-        </h1>
         <p className="page-desc">
           仕入単価(元)を入れると、共通設定(為替・代行手数料・国際送料)と関税・中国国内送料から着地原価を計算し、
           1個利益・月利益・黒字ライン仕入値を出します。仕入先が分からない商品は「仕入れ候補を探す」で候補を引けます。

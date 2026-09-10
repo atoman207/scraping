@@ -5,36 +5,46 @@
    --------------------------------------------------------------- */
 
 :root {
-  --bg: #f6f7f9;
+  --bg: #fbfbfb;
   --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --border: #e6e8eb;
-  --border-strong: #d5d8dc;
+  --surface-2: #fafafa;
+  --border: #ececec;
+  --border-strong: #e4e4e7;
+  --line: #f1f1f1;
 
-  --text: #16181d;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
+  --text: #18181b;
+  --text-body: #3f3f46;
+  --text-muted: #71717a;
+  --text-faint: #a1a1aa;
 
-  --brand: #5b4fe0;
-  --brand-dark: #4a3fd0;
-  --brand-soft: #eee8ff;
-  --brand-border: #d8d3fb;
+  --brand: #5b5bd6;
+  --brand-dark: #4f4fc4;
+  --brand-soft: #eeeef9;
+  --brand-border: #d4d4f1;
+  --brand-rgb: 91, 91, 214;
 
-  --green: #0a7d2c;
-  --green-soft: #e7f6ec;
-  --red: #c0392b;
-  --red-soft: #fdecea;
-  --amber: #a16207;
-  --amber-soft: #fff9e6;
-  --amber-border: #f0d97a;
+  --green: #0e9f6e;
+  --green-soft: #ecfaf3;
+  --green-border: #c9eddd;
+  --red: #e5484d;
+  --red-soft: #fef6f6;
+  --red-border: #f6cdcd;
+  --amber: #b7791f;
+  --amber-soft: #fffaf0;
+  --amber-border: #f2ddb0;
 
-  --r-sm: 6px;
-  --r: 10px;
-  --r-lg: 14px;
+  --r-sm: 7px;
+  --r: 9px;
+  --r-lg: 12px;
   --r-pill: 999px;
 
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-lg: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 16px 48px -16px rgba(0, 0, 0, 0.3);
+
+  /* 画面枠の寸法(サイドバー幅・ヘッダー高さ・本文の最大幅) */
+  --side-w: 248px;
+  --header-h: 58px;
+  --content-max: 1180px;
 }
 
 * {
@@ -52,34 +62,39 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- レイアウト ---------- */
+/* ===============================================================
+   画面枠 — 左サイドバー / 上ヘッダー / 本文スクロール
+   ヘッダーとサイドバーは固定し、本文だけが縦に流れる。
+   一覧が長くなっても、現在地(画面名)と件数が常に見えるようにするため。
+   =============================================================== */
 .shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface);
 }
 
+/* ---------- サイドバー ---------- */
 .sidebar {
-  width: 232px;
-  flex-shrink: 0;
+  width: var(--side-w);
+  flex: 0 0 auto;
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding: 20px 12px;
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  overflow-y: auto;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 8px;
+  padding: 8px 8px 20px;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   letter-spacing: 0.01em;
+  color: var(--brand);
 }
 
 .brand-mark {
@@ -100,86 +115,404 @@ body {
   display: block;
 }
 
+/* 区切りの小見出し(リサーチ / 仕入れ・販売 …) */
+.nav-group {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  padding: 4px 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.nav + .nav-group,
+.side-soon + .nav-group,
+.side-guide + .nav-group,
+.nav-group + .nav-group {
+  padding-top: 18px;
+}
+
 .nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
+/* 1行に「番号・アイコン・画面名・ひとこと説明」を収める。
+   説明を添えるのは、どの画面で何をするのかを覚えていなくても選べるようにするため。 */
 .nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
+  width: 100%;
+  padding: 9px 8px;
+  border: none;
   border-radius: var(--r);
-  color: var(--text-muted);
+  background: transparent;
+  color: var(--text-body);
   text-decoration: none;
-  font-size: 13.5px;
-  font-weight: 500;
-  transition: background 0.12s, color 0.12s;
+  text-align: left;
+  transition: background 0.12s;
 }
 .nav-item:hover {
-  background: var(--surface-2);
-  color: var(--text);
+  background: #f7f7f8;
 }
 .nav-item[data-active="true"] {
   background: var(--brand-soft);
-  color: var(--brand);
-  font-weight: 600;
 }
+
 .nav-step {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  display: grid;
-  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: #f4f4f5;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
+  font-weight: 600;
+  flex: 0 0 auto;
 }
 .nav-item[data-active="true"] .nav-step {
   background: var(--brand);
-  border-color: var(--brand);
   color: #fff;
 }
 
-.sidebar-foot {
-  margin-top: auto;
-  padding: 10px 8px;
-  font-size: 11.5px;
+.nav-icon {
+  display: flex;
+  flex: 0 0 auto;
   color: var(--text-faint);
-  line-height: 1.5;
+}
+.nav-item[data-active="true"] .nav-icon {
+  color: var(--brand);
 }
 
-.main {
-  flex: 1;
-  padding: 28px 32px 60px;
+.nav-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-width: 0;
 }
-
-.page {
-  max-width: 1080px;
-  margin: 0 auto;
+.nav-txt b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-body);
+  line-height: 1.25;
 }
-.page-wide {
-  max-width: 1180px;
+.nav-item[data-active="true"] .nav-txt b {
+  font-weight: 600;
+  color: var(--brand);
+}
+.nav-txt i {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-style: normal;
+  line-height: 1.3;
+}
+
+/* 使い方の導線。メニューと色を変えて、押せることが分かるようにする */
+.side-guide {
+  display: block;
+  margin: 10px 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.side-guide:hover {
+  filter: brightness(0.97);
+}
+.side-guide[data-active="true"] {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* まだ無い機能。押せないことが見て分かる形で置く */
+.side-soon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.side-soon > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.soon {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---------- サイドバー下部(ログイン情報) ---------- */
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 14px;
+}
+.side-user {
+  padding: 14px 8px 4px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avatar-sq {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.side-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  word-break: break-all;
+}
+.acct-status {
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--green);
+}
+.acct-status.admin {
+  color: var(--brand);
+}
+.side-logout {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.side-logout:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+.side-links {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 8px 2px;
+}
+.side-links a {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.side-links a:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* ---------- 右側(ヘッダー + 本文) ---------- */
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-header {
+  height: var(--header-h);
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 16px;
+  padding: 0 28px;
+  background: var(--surface);
+}
+/* 画面名が長いときは、件数を押し出さずに自分が省略される */
+.screen-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.hspace {
+  flex: 1;
+}
+
+/* 件数の表示。今どれだけ溜まっているかを、画面を移らずに見えるようにする */
+.quota {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+}
+.quota .q {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.quota .q span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.quota .q b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.quota .q[data-busy="true"] {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+}
+.quota .q[data-busy="true"] b {
+  color: var(--brand);
+}
+
+.app-scroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+}
+.app-content {
+  max-width: var(--content-max);
   margin: 0 auto;
+  padding: 30px 28px 90px;
+}
+
+/* 本文の幅は .app-content が決める。
+   画面側に残っている .page / .page-wide は、そのための入れ物として素通しにする */
+.page,
+.page-wide {
+  max-width: none;
+  margin: 0;
+}
+
+/* ---------- 小さい画面(サイドバーを引き出しにする) ---------- */
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 21px;
+  line-height: 1;
+  color: var(--text);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.nav-overlay {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 0.18s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.12);
+  }
+  body.nav-open .sidebar {
+    transform: none;
+  }
+  body.nav-open .nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.35);
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+  .app-header {
+    padding: 0 14px;
+    gap: 10px;
+  }
+  .app-content {
+    padding: 20px 16px 70px;
+  }
+  .quota {
+    gap: 6px;
+  }
+  .quota .q {
+    padding: 4px 8px;
+    gap: 5px;
+  }
+  .quota .q span {
+    font-size: 10px;
+  }
+  .quota .q b {
+    font-size: 12px;
+  }
+}
+
+/* いちばん狭いところでは件数を畳む。画面名と現在地を優先する */
+@media (max-width: 430px) {
+  .quota .q:not(:last-child) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
 }
 
 /* ---------- 見出し ---------- */
 .page-head {
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
+/* 画面名は上のヘッダー(.screen-title)に出る。
+   本文の先頭に残すのは「その画面で何をするか」の説明だけ。 */
 .page-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 21px;
-  font-weight: 700;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 600;
   margin: 0 0 6px;
-  letter-spacing: -0.01em;
 }
 .page-title svg {
   color: var(--brand);
@@ -187,8 +520,9 @@ body {
 .page-desc {
   margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
-  max-width: 76ch;
+  font-size: 12.5px;
+  line-height: 1.75;
+  max-width: 86ch;
 }
 
 /* ---------- カード ---------- */
@@ -199,11 +533,11 @@ body {
   box-shadow: var(--shadow);
 }
 .card-pad {
-  padding: 16px 18px;
+  padding: 20px 22px;
 }
 .card-repeat {
   border-color: var(--brand-border);
-  box-shadow: 0 0 0 3px rgba(91, 79, 224, 0.05), var(--shadow);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.05), var(--shadow);
 }
 .stack {
   display: flex;
@@ -225,7 +559,7 @@ table.data {
   font-size: 13.5px;
 }
 table.data thead th {
-  background: var(--surface-2);
+  background: var(--surface);
   text-align: left;
   padding: 11px 14px;
   font-weight: 600;
@@ -349,7 +683,7 @@ table.data tbody tr:hover {
 .input:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(91, 79, 224, 0.12);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.12);
 }
 .input-wide {
   width: 100%;
@@ -400,23 +734,43 @@ table.data tbody tr:hover {
 }
 
 /* ---------- 指標 ---------- */
+/* 原価・黒字ライン・1個利益・月利益は、この画面でいちばん見たい数字。
+   横並びの小さな文字ではなく、枠で囲った大きな数字にして拾いやすくする。 */
 .metrics {
-  display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
+  align-items: stretch;
   border-top: 1px solid var(--border);
-  padding-top: 12px;
-  margin-top: 12px;
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.metrics > div {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 11px 13px;
+  min-width: 0;
+}
+/* 最後の枠は黒字/赤字のバッジだけなので、枠は付けずに右端へ寄せる */
+.metrics > div:last-child {
+  background: none;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 .metric-label {
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 500;
-  margin-bottom: 1px;
+  margin-bottom: 3px;
 }
 .metric-value {
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 700;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 .metric-value.pos {
@@ -495,16 +849,16 @@ table.data tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow);
-  padding: 16px 18px;
-  margin-bottom: 18px;
+  padding: 20px 22px;
+  margin-bottom: 20px;
 }
 .runner-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 650;
-  font-size: 13.5px;
-  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 14px;
 }
 .log {
   margin-top: 12px;
@@ -834,10 +1188,10 @@ tr[data-ng="true"] .name {
   transform: translateY(1px);
 }
 .btn-primary {
-  box-shadow: 0 1px 2px rgba(91, 79, 224, 0.25);
+  box-shadow: 0 1px 2px rgba(var(--brand-rgb), 0.22);
 }
 .btn-primary:hover:not(:disabled) {
-  box-shadow: 0 2px 8px rgba(91, 79, 224, 0.3);
+  box-shadow: 0 2px 8px rgba(var(--brand-rgb), 0.26);
 }
 /* 実行中のボタンは、進行を示す帯が流れる */
 .btn[data-busy="true"] {
@@ -1027,43 +1381,52 @@ select.input:disabled {
   display: grid;
   place-items: center;
   padding: 24px;
-  background:
-    radial-gradient(900px 500px at 50% -10%, rgba(91, 79, 224, 0.1), transparent 70%),
-    var(--bg);
+  background: var(--bg);
 }
 .auth-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 360px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 26px 26px 22px;
+  box-shadow: var(--shadow);
+  padding: 28px;
 }
+/* ロゴは中央に大きく。ここが何のサービスかを最初に伝える */
 .auth-brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.auth-brand img {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.auth-brand b {
+  font-size: 17px;
   font-weight: 700;
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: 18px;
+  color: var(--brand);
+  letter-spacing: 0.01em;
 }
 .auth-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 19px;
-  font-weight: 700;
-  margin: 0 0 6px;
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
 }
 .auth-title svg {
   color: var(--brand);
 }
 .auth-desc {
   margin: 0 0 18px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.7;
 }
@@ -1073,11 +1436,12 @@ select.input:disabled {
   gap: 14px;
 }
 .auth-foot {
-  margin: 16px 0 0;
+  margin: 18px 0 0;
   padding-top: 14px;
   border-top: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--text-faint);
+  line-height: 1.7;
 }
 
 /* 入力欄の中にアイコン／表示切り替えボタンを置く */
@@ -1128,42 +1492,6 @@ select.input:disabled {
 /* ===============================================================
    サイドバー下部のログイン情報
    =============================================================== */
-.sidebar-foot .who {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
-  color: var(--text-muted);
-}
-.who-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-pill);
-  background: var(--brand-soft);
-  color: var(--brand);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.who-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav-sep {
-  height: 1px;
-  background: var(--border);
-  margin: 8px 4px;
-}
-.nav-step-admin {
-  background: var(--brand-soft);
-  border-color: var(--brand-border);
-  color: var(--brand);
-}
-
 /* ===============================================================
    会員管理
    =============================================================== */
@@ -1648,4 +1976,362 @@ code {
   display: flex;
   justify-content: center;
   padding: 4px 0 2px;
+}
+
+/* ===============================================================
+   使い方ガイド(/guide)
+   長い文章を読ませる画面なので、他の画面より行間を広く、
+   1行の文字数を抑える。図表は本文と同じ幅に収める。
+   =============================================================== */
+.guide {
+  max-width: 860px;
+}
+
+.guide-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 26px 28px;
+  margin-bottom: 18px;
+}
+.guide-hero h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+.guide-hero p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--text-body);
+}
+
+/* 全体の流れ(①→②→③)を最初に見せる */
+.guide-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.guide-flow-step {
+  flex: 1 1 180px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  background: var(--surface-2);
+}
+.guide-flow-step b {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.guide-flow-step .n {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.guide-flow-step span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+/* 目次 */
+.guide-toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 18px 22px;
+  margin-bottom: 26px;
+}
+.guide-toc h2 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin: 0 0 10px;
+}
+.guide-toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 28px;
+}
+.guide-toc li {
+  font-size: 13px;
+  line-height: 2;
+  break-inside: avoid;
+}
+.guide-toc a {
+  color: var(--text-body);
+  text-decoration: none;
+}
+.guide-toc a:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* 本文 */
+.guide-section {
+  margin-bottom: 34px;
+  scroll-margin-top: 20px;
+}
+.guide-section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.01em;
+}
+.guide-section > h2 .guide-num {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.guide-section h3 {
+  font-size: 14.5px;
+  font-weight: 600;
+  margin: 26px 0 8px;
+}
+.guide-section p {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.95;
+  color: var(--text-body);
+}
+.guide-section ul,
+.guide-section ol {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  font-size: 13.5px;
+  line-height: 1.95;
+  color: var(--text-body);
+}
+.guide-section li {
+  margin-bottom: 4px;
+}
+.guide-section li > strong,
+.guide-section p > strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.guide-section a {
+  color: var(--brand);
+  font-weight: 500;
+}
+
+/* 表。本文中では罫線を細く、見出しだけ薄く塗る */
+.guide-table {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+.guide-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.guide-table th,
+.guide-table td {
+  padding: 9px 13px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.75;
+  border-top: 1px solid var(--line);
+}
+.guide-table thead th {
+  background: var(--surface-2);
+  border-top: none;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* 条件や税率など、折り返すと読みにくい短い値の列 */
+.guide-table td.nowrap {
+  white-space: nowrap;
+}
+.guide-table tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  width: 1%;
+}
+
+/* 計算式。等幅で桁を揃える */
+.guide-formula {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin: 0 0 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-body);
+}
+.guide-formula b {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 補足・注意。色で読み分けられるようにする */
+.guide-callout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: var(--r);
+  padding: 13px 15px;
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.85;
+}
+.guide-callout svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.guide-callout p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.85;
+}
+.guide-callout p + p {
+  margin-top: 6px;
+}
+.guide-callout-info {
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-border);
+  color: var(--text-body);
+}
+.guide-callout-info svg {
+  color: var(--brand);
+}
+.guide-callout-warn {
+  background: var(--amber-soft);
+  border: 1px solid var(--amber-border);
+  color: #7c5411;
+}
+.guide-callout-warn svg {
+  color: var(--amber);
+}
+
+/* 操作手順。番号を振って順番があることを示す */
+.guide-steps {
+  list-style: none;
+  counter-reset: gstep;
+  margin: 0 0 16px;
+  padding: 0;
+}
+.guide-steps > li {
+  position: relative;
+  counter-increment: gstep;
+  padding: 0 0 14px 34px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.95;
+  border-left: 1px solid var(--border);
+  margin-left: 11px;
+}
+.guide-steps > li:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+.guide-steps > li::before {
+  content: counter(gstep);
+  position: absolute;
+  left: -11px;
+  top: 1px;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--brand-border);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 画面の項目名を本文中で示すときの体裁 */
+.guide-ui {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 0.94em;
+  white-space: nowrap;
+}
+
+.guide-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-decoration: none;
+  margin-top: 4px;
+}
+.guide-top:hover {
+  color: var(--brand);
+}
+
+.guide-foot {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.9;
+}
+
+@media (max-width: 700px) {
+  .guide-toc ul {
+    columns: 1;
+  }
+  /* 折り返しを許して、まず幅に収めることを優先する */
+  .guide-table td.nowrap,
+  .guide-table tbody th {
+    white-space: normal;
+  }
+  .guide-hero {
+    padding: 20px;
+  }
+  .guide-hero h1 {
+    font-size: 19px;
+  }
 }

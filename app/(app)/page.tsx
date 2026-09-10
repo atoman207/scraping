@@ -119,10 +119,6 @@ export default async function SellerResearchPage() {
   return (
     <div className="page page-wide">
       <div className="page-head">
-        <h1 className="page-title">
-          <IconUsers size={20} />
-          セラーリサーチ
-        </h1>
         <p className="page-desc">
           キーワードでメルカリのSOLD商品を検索し、同じセラーが繰り返し出てくる=有力セラーを一覧化します。
           気になるセラーの「深掘りへ」から、そのセラーの鉄板商品を調べられます。

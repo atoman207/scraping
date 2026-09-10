@@ -16,7 +16,7 @@ import {
   type AppUser,
   type Role,
 } from "../../../lib/auth";
-import { IconAlert, IconShield } from "../../icons";
+import { IconAlert } from "../../icons";
 import AdminClient from "./AdminClient";
 
 export const dynamic = "force-dynamic";
@@ -173,10 +173,6 @@ export default async function AdminPage() {
   return (
     <div className="page page-wide">
       <div className="page-head">
-        <h1 className="page-title">
-          <IconShield size={20} />
-          会員管理
-        </h1>
         <p className="page-desc">
           ログインIDは<strong>ここでしか発行できません</strong>(利用者が自分で登録することはできません)。
           パスワードは鍵アイコンから確認・変更できます。発行直後も上部パネルに表示されます。

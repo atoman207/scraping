@@ -12,8 +12,9 @@
  *   実態の無いアニメーションで進んでいるように見せてはいない。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconAlert, IconCheck, IconLoader, IconRefresh, IconSearch } from "./icons";
+import { IconAlert, IconArrowRight, IconCheck, IconLoader, IconRefresh, IconSearch } from "./icons";
 
 type Phase = "crawl" | "names" | "list" | "ship" | "aggregate" | "save" | "cluster" | "title" | "image";
 
@@ -37,6 +38,8 @@ type Props = {
   buttonLabel: string;
   /** 検索フォーム(kind=search)を出すか */
   withSearchForm?: boolean;
+  /** セラーIDの入力欄(kind=seller)を出すか。①を経由せずに深掘りを始めたいとき用 */
+  withSellerIdForm?: boolean;
   /** 取得の深さ(標準3件 / 詳細20件)を選ばせるか(kind=seller) */
   withDepthChoice?: boolean;
   /** 探し方(タイトル検索 / 画像検索)を選ばせるか(kind=sourcing) */
@@ -76,6 +79,7 @@ export default function ScrapeRunner({
   payload,
   buttonLabel,
   withSearchForm,
+  withSellerIdForm,
   withDepthChoice,
   withSourcingOptions,
   title,
@@ -86,7 +90,7 @@ export default function ScrapeRunner({
   const [job, setJob] = useState<Job | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ keyword: "", aruaru: "", pages: 2, resolve: 20 });
+  const [form, setForm] = useState({ keyword: "", aruaru: "", pages: 2, resolve: 20, sellerId: "" });
   /** 実送料をいくつ取りに行くか。標準3件 / 詳細20件(参考にした既存サービスと同じ刻み) */
   const [depth, setDepth] = useState<3 | 20>(3);
   /** 3-3: どの探し方を使うか。両方外すと実行できない */
@@ -149,7 +153,11 @@ export default function ScrapeRunner({
           : {
               kind,
               ...payload,
-              ...(withDepthChoice ? { shipping: depth } : {}),
+              // 入力欄から始めたときは、そこに入っているIDを使う。
+              // プロフィールURLを貼られてもよいように、IDの取り出しはサーバー側で行う。
+              ...(withSellerIdForm ? { seller_external_id: form.sellerId.trim() } : {}),
+              // 実送料の件数は、どちらの入力欄から始めても選んだ値を送る
+              ...(withDepthChoice || withSellerIdForm ? { shipping: depth } : {}),
               ...(withSourcingOptions ? { modes } : {}),
             };
       const r = await fetch("/api/scrape", {
@@ -168,7 +176,7 @@ export default function ScrapeRunner({
     } finally {
       setStarting(false);
     }
-  }, [kind, form, payload, depth, withDepthChoice, withSourcingOptions, modes]);
+  }, [kind, form, payload, depth, withDepthChoice, withSellerIdForm, withSourcingOptions, modes]);
 
   // 段階の進み具合。全体の何%まで来たかを、段階の順番と段階内の進捗から出す
   // 3-3 は選んだ探し方だけを段階として出す(使わない段階を灰色で残さない)
@@ -224,7 +232,46 @@ export default function ScrapeRunner({
         </div>
       )}
 
-      {withSearchForm ? (
+      {withSellerIdForm ? (
+        <div className="form-row">
+          <label className="field" style={{ flex: 1, minWidth: 260 }}>
+            セラーID または プロフィールURL
+            <input
+              className="input input-wide"
+              placeholder="例: 123456789 / https://jp.mercari.com/user/profile/123456789"
+              value={form.sellerId}
+              disabled={running}
+              onChange={(e) => setForm({ ...form, sellerId: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && form.sellerId.trim() && canRun) start();
+              }}
+            />
+          </label>
+          <label className="field">
+            実送料を調べる件数
+            <select
+              className="input"
+              style={{ width: 168 }}
+              value={depth}
+              disabled={running}
+              onChange={(e) => setDepth(Number(e.target.value) === 20 ? 20 : 3)}
+            >
+              <option value={3}>標準 — SOLD上位3件</option>
+              <option value={20}>詳細 — SOLD上位20件</option>
+            </select>
+          </label>
+          <button
+            className="btn btn-primary"
+            data-busy={running || undefined}
+            onClick={start}
+            disabled={!canRun || !form.sellerId.trim()}
+            type="button"
+          >
+            {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
+            {running ? "実行中" : buttonLabel}
+          </button>
+        </div>
+      ) : withSearchForm ? (
         <div className="form-row">
           <label className="field" style={{ flex: 1, minWidth: 220 }}>
             キーワード
@@ -434,6 +481,12 @@ export default function ScrapeRunner({
               <span className="pill pill-warn">
                 <IconAlert size={11} /> 中断
               </span>
+            )}
+            {job?.status === "done" && job.resultHref && (
+              <Link className="btn btn-primary btn-sm" href={job.resultHref}>
+                結果を見る
+                <IconArrowRight size={13} />
+              </Link>
             )}
             {job && job.status !== "running" && (
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => router.refresh()}>

@@ -177,10 +177,6 @@ export default async function SellerDeepdivePage({
   return (
     <div className="page page-wide">
       <div className="page-head">
-        <h1 className="page-title">
-          <IconLayers size={20} />
-          セラー深掘り
-        </h1>
         <p className="page-desc">
           {sellerId ? (
             <>
@@ -188,10 +184,23 @@ export default async function SellerDeepdivePage({
               )を鉄板商品候補として表示します。良さそうなものは「深掘りリストへ保存」で③に送ります。
             </>
           ) : (
-            "①のセラーリサーチから「深掘りへ」で遷移してください。"
+            "①のセラーリサーチから「深掘りへ」で選ぶか、セラーIDを直接入れて始められます。"
           )}
         </p>
       </div>
+
+      {/* ①を経由しなくても始められるようにする。
+          セラーIDが分かっているときに、一覧を検索し直す手間を省くため。
+          セラーを選んでいるときは、下の「このセラーの出品を再取得」があるので出さない。 */}
+      {!seller && (
+        <ScrapeRunner
+          kind="seller"
+          withSellerIdForm
+          buttonLabel="深掘りする"
+          title="セラーIDから直接深掘り"
+          description="メルカリのセラーID(プロフィールURLを貼っても構いません)から、そのセラーの出品を取得して鉄板商品を抽出します。"
+        />
+      )}
 
       {seller && (
         <>
@@ -501,7 +510,7 @@ export default async function SellerDeepdivePage({
             <div style={{ fontSize: 12.5, marginTop: 4 }}>
               {sellerId
                 ? "上の「このセラーの出品を再取得」を押すとメルカリから取得します。"
-                : "①セラーリサーチの一覧から「深掘りへ」を押してください。"}
+                : "上の入力欄にセラーIDを入れるか、①セラーリサーチの一覧から「深掘りへ」を押してください。"}
             </div>
           </div>
         )}
