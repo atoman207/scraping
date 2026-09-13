@@ -53,22 +53,28 @@ export async function POST(req: NextRequest) {
   }
 
   if (kind === "search") {
-    const keyword = String(body.keyword ?? "").trim();
-    if (!keyword) return NextResponse.json({ error: "キーワードを入力してください" }, { status: 400 });
+    const { parseSearchWords, formatKeywordsLabel, MAX_SEARCH_KEYWORDS, MAX_ARUARU_WORDS } = await import(
+      "../../../lib/scraper/search-words"
+    );
+    const keywords = parseSearchWords(body.keyword ?? body.keywords, { max: MAX_SEARCH_KEYWORDS });
+    if (!keywords.length) {
+      return NextResponse.json({ error: "キーワードを入力してください" }, { status: 400 });
+    }
 
-    const aruaru = Array.isArray(body.aruaru)
-      ? [...new Set((body.aruaru as unknown[]).map((w) => String(w).trim()).filter(Boolean))]
-      : [];
+    const aruaru = parseSearchWords(
+      Array.isArray(body.aruaru) ? body.aruaru : String(body.aruaru ?? ""),
+      { max: MAX_ARUARU_WORDS }
+    );
     const pages = clamp(Number(body.pages ?? 10), 1, 20);
     const sellers = clamp(Number(body.sellers ?? 60), 1, 200);
     const includeUsed = Boolean(body.includeUsed);
 
     const label =
-      `リサーチ：${keyword}` +
+      `リサーチ：${formatKeywordsLabel(keywords)}` +
       (aruaru.length ? ` [${aruaru.join("、")}]` : "") +
       `（${pages}ページ${includeUsed ? "・中古含む" : ""}）`;
 
-    const job = await enqueue(kind, { keyword, aruaru, pages, sellers, includeUsed }, label);
+    const job = await enqueue(kind, { keywords, keyword: keywords[0], aruaru, pages, sellers, includeUsed }, label);
     return NextResponse.json({ jobId: job.id, seq: job.seq, label });
   }
 

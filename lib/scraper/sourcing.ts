@@ -24,6 +24,8 @@ import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { ScraperSession, type ScraperOptions } from "./browser";
 import { sequenceRatio } from "../engine/difflib";
+import { toOriginalMercariImage } from "./mercari-photos";
+import { toChineseQuery } from "./zh-query";
 import type { SourcingAdapter, SourcingCandidate } from "./types";
 
 // ---------------------------------------------------------------- 検索語の組み立て
@@ -209,17 +211,10 @@ export function parseAeCardText(text: string): {
 /** アップロードする画像の上限(バイト)。これを超える画像は扱わない */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-/**
- * メルカリのサムネイルURLを、可能なら元画像のURLに読み替える。
- *
- * DBに入っているのは一覧用のサムネイル(webp・数KB)で、画像検索に使うには小さい。
- * メルカリは同じ商品IDで元画像(jpg)も公開しているので、そちらを先に試す。
- */
-export function toOriginalMercariImage(url: string): string | null {
-  const m = url.match(/static\.mercdn\.net\/thumb\/item\/(?:webp|jpeg|jpg)\/(m\d+)_(\d+)\.jpg/);
-  if (!m) return null;
-  return `https://static.mercdn.net/item/detail/orig/photos/${m[1]}_${m[2]}.jpg`;
-}
+// 写真URLの組み立ては依存の無い別ファイル(./mercari-photos)に置いてある。
+// 画面やAPIからも使うので、そちらに Playwright を引き込まないようにするため。
+// ここからも今までどおり読めるように再輸出しておく(呼び出し側の import を変えずに済む)。
+export { mercariPhotoUrls, toOriginalMercariImage } from "./mercari-photos";
 
 const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -360,6 +355,9 @@ export class AliExpressSourcing implements SourcingAdapter {
         rating: parsed.rating,
         is_ad: parsed.isAd,
         match_score: scoreCandidate(opts.sourceTitle, title),
+        // サイトが返してきた順番。画像検索では「見た目の近い順」そのものなので、
+        // あとから文字列の一致度で並べ替えて壊さないように持っておく。
+        source_rank: out.length + 1,
       });
       if (out.length >= opts.limit) break;
     }
@@ -444,29 +442,102 @@ export class AliExpressSourcing implements SourcingAdapter {
   /**
    * 商品画像から類似商品を探す。
    *
-   * 検索窓のカメラにマウスを乗せる → 現れたファイル入力に画像を渡す、という
-   * 人が画像検索を使うときと同じ手順を踏む。結果ページに移らなかった場合は
-   * **例外にせず空配列を返す**(タイトル検索の結果まで捨てないため)。
+   * **写真を複数枚使う。** メルカリの1枚目は文字入れ・箱・複数点を並べた写真の
+   * ことが多く、それ1枚だけで探すと当たらない。2枚目以降は商品そのものを写した
+   * 素直な写真であることが多いので、順に探して結果を突き合わせる。
+   *
+   * 突き合わせ方:
+   *   ・同じ商品は1件にまとめる
+   *   ・**複数の写真から出てきた商品を先頭に置く**(見た目が近い可能性がいちばん高い)
+   *   ・同数なら、サイトが返してきた順番(=見た目の近い順)が上のほうを先に置く
+   *
+   * 途中の写真で失敗しても、そこで止めずに次の写真へ進む。
+   * 全部だめだった場合だけ空配列を返す(タイトル検索の結果まで捨てないため)。
    */
-  async searchByImage(imageUrl: string, limit = 12, sourceTitle = ""): Promise<SourcingCandidate[]> {
+  async searchByImage(imageUrls: string[], limit = 12, sourceTitle = ""): Promise<SourcingCandidate[]> {
+    const urls = imageUrls.filter(Boolean);
+    if (!urls.length) return [];
+
+    /** 商品ごとに「何枚の写真から出てきたか」と「いちばん上だった順位」を覚える */
+    const merged = new Map<string, { c: SourcingCandidate; hits: number; best: number }>();
+    let searched = 0;
+
+    for (const [i, url] of urls.entries()) {
+      const found = await this.searchOneImage(url, limit, sourceTitle, i + 1, urls.length);
+      if (found === null) continue; // この写真は使えなかった(次の写真へ)
+      searched++;
+      for (const c of found) {
+        const key = c.external_id ?? c.url;
+        const prev = merged.get(key);
+        const rank = c.source_rank ?? 999;
+        if (prev) {
+          prev.hits++;
+          if (rank < prev.best) {
+            prev.best = rank;
+            prev.c = c;
+          }
+        } else {
+          merged.set(key, { c, hits: 1, best: rank });
+        }
+      }
+    }
+
+    if (!searched) {
+      this.log("  どの写真でも画像検索できませんでした。タイトル検索の結果だけを使います。");
+      return [];
+    }
+
+    const ordered = [...merged.values()]
+      .sort((a, b) => (b.hits !== a.hits ? b.hits - a.hits : a.best - b.best))
+      .slice(0, limit)
+      // 突き合わせたあとの並びが、そのまま画面の並びになる
+      .map(({ c, hits }, idx) => ({ ...c, source_rank: idx + 1, _hits: hits }));
+
+    const multi = ordered.filter((c) => c._hits > 1).length;
+    this.log(
+      `  画像検索 まとめ: ${searched}枚から候補${ordered.length}件` +
+        (multi ? `(うち${multi}件は複数の写真から一致)` : "")
+    );
+    return ordered.map(({ _hits, ...c }) => c);
+  }
+
+  /**
+   * 写真1枚ぶんの画像検索。
+   *
+   * 検索窓のカメラにマウスを乗せる → 現れたファイル入力に画像を渡す、という
+   * 人が画像検索を使うときと同じ手順を踏む。
+   *
+   * 戻り値は「候補の配列」か、**この写真では検索できなかったことを表す null**。
+   * 0件(=検索はできたが該当なし)と区別できるようにしている。
+   */
+  private async searchOneImage(
+    imageUrl: string,
+    limit: number,
+    sourceTitle: string,
+    nth: number,
+    total: number
+  ): Promise<SourcingCandidate[] | null> {
+    const tag = total > 1 ? `写真${nth}/${total}` : "画像";
+
     let image: { file: string; bytes: number; cleanup: () => void };
     try {
       image = await downloadProductImage(imageUrl, this.log);
     } catch (e) {
-      this.log(`  画像検索は行いません: ${String(e instanceof Error ? e.message : e).slice(0, 160)}`);
-      return [];
+      // 写真が少ない出品では、存在しない番号が403を返す。異常ではないので静かに飛ばす
+      this.log(`  ${tag}: 使えませんでした (${String(e instanceof Error ? e.message : e).slice(0, 90)})`);
+      return null;
     }
 
     try {
-      this.log(`  AliExpress 画像検索: ${Math.round(image.bytes / 1024)}KBの画像をアップロードします`);
+      this.log(`  ${tag}: ${Math.round(image.bytes / 1024)}KBをアップロードします`);
       // トップページは ja.aliexpress.com に転送されたあとヘッダーを描き直すので、
       // 開いた直後にはカメラのアイコンがまだ無い(revealFileInput が待つ)
       const page = await this.session.goto("https://www.aliexpress.com/", 5000);
 
       const input = await this.revealFileInput(page);
       if (!input) {
-        this.log("  画像の受け口が現れませんでした。タイトル検索の結果だけを使います。");
-        return [];
+        this.log(`  ${tag}: 画像の受け口が現れませんでした。`);
+        return null;
       }
       await input.setInputFiles(image.file, { timeout: 20000 });
 
@@ -481,13 +552,13 @@ export class AliExpressSourcing implements SourcingAdapter {
         }
       }
       if (!reached) {
-        this.log("  画像検索の結果ページに移りませんでした。タイトル検索の結果だけを使います。");
-        return [];
+        this.log(`  ${tag}: 画像検索の結果ページに移りませんでした。`);
+        return null;
       }
       const resultUrl = page.url();
       const cards = await this.harvest(limit);
       const out = this.toCandidates(cards, { mode: "image", query: resultUrl, sourceTitle, limit });
-      this.log(`  → 候補${out.length}件(読み取り${cards.length}件)`);
+      this.log(`  ${tag}: 候補${out.length}件(読み取り${cards.length}件)`);
       return out;
     } finally {
       image.cleanup();
@@ -497,38 +568,69 @@ export class AliExpressSourcing implements SourcingAdapter {
 
 // ---------------------------------------------------------------- 1688
 
-/** 1688のキーワード検索URL(人が開く前提) */
-export function keyword1688Url(q: string): string {
-  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(q)}`;
+/**
+ * 1688のキーワード検索URL(人が開く前提)。
+ *
+ * **渡す語は中国語であること。** 1688 は中国国内向けの卸売サイトで、
+ * 商品タイトルはすべて簡体字なので、日本語を投げても1件も当たらない。
+ * 変換は lib/scraper/zh-query.ts の toChineseQuery() が行う。
+ */
+export function keyword1688Url(zhQuery: string): string {
+  return `https://s.1688.com/selloffer/offer_search.htm?keywords=${encodeURIComponent(zhQuery)}`;
 }
 
 /** 1688の画像検索ページ(人が画像をアップロードする前提) */
 export const IMAGE_SEARCH_1688_URL = "https://s.1688.com/youyuan/index.htm?tab=imageSearch";
 
 /**
- * 1688 は検索ページ自体がログイン必須(未ログインだと login.taobao.com にリダイレクトされる)。
- * ログイン状態を偽装して突破する実装は入れていないため、ここでは
- * 「人が開けばそのまま使える検索URL」を組み立てて返す。
- * 深掘りリストの「仕入先URL」欄にそのまま貼れる形になっている。
+ * 1688 は**すべての経路がログイン必須**。
+ *
+ *   商品詳細   detail.1688.com/offer/…            → login.taobao.com へリダイレクト
+ *   キーワード s.1688.com/selloffer/offer_search  → login.taobao.com へリダイレクト
+ *   画像検索   s.1688.com/youyuan/…               → スライダーCAPTCHA
+ *
+ * 実ブラウザ(Chrome)・日本語ロケール・webdriver隠しの状態でも同じ結果だったので、
+ * ヘッドレス判定の問題ではなく、認証済みセッションが要るということ。
+ * ログインの偽装もCAPTCHAの自動突破もしない方針(lib/scraper/browser.ts と同じ)なので、
+ * ここでは **人が開けばそのまま使える検索URL** を組み立てて返すにとどめる。
+ *
+ * 深掘りリストの「仕入先URL」欄にそのまま貼れる形にしてある。
  */
 export class Alibaba1688Sourcing implements SourcingAdapter {
   readonly platformName = "1688";
 
+  /**
+   * 中国語に直したキーワードで検索するURLを返す。
+   *
+   * 訳せた語は画面とログに出すので、狙いとずれていれば人が直せる。
+   * 対訳表に無い語ばかりで訳せなかったときは、その旨をラベルに出す
+   * (黙って日本語のまま投げると、ログインしても0件になって原因が分からない)。
+   */
   async searchCandidates(title: string, _limit = 8): Promise<SourcingCandidate[]> {
-    const q = toSearchQuery(title);
-    return [this.link(`1688でキーワード「${q}」を検索する(要ログイン)`, keyword1688Url(q), q)];
+    const zh = toChineseQuery(title);
+    if (!zh.query) {
+      // 中国語にできる語が1つも無い(記号と型番だけのタイトルなど)
+      return [];
+    }
+    const label = zh.confident
+      ? `1688で「${zh.query}」を検索する(要ログイン)`
+      : `1688で「${zh.query}」を検索する(自動訳・要確認／要ログイン)`;
+    return [this.link(label, keyword1688Url(zh.query), zh.query)];
   }
 
   /**
    * 1688の画像検索もログインが必要なので、画像検索ページのURLだけを返す。
-   * (商品画像は人が貼り直す前提。こちらから自動でアップロードはしない)
+   * 参考にしたサービスは画像をアップロードして imageId を取得しているが、
+   * それにはログイン済みのアカウントが要るため、ここでは入口だけを出す。
    */
-  async searchByImage(imageUrl: string, _limit = 8): Promise<SourcingCandidate[]> {
+  async searchByImage(imageUrls: string[], _limit = 8): Promise<SourcingCandidate[]> {
+    const first = imageUrls.find(Boolean);
+    if (!first) return [];
     return [
       this.link(
         "1688の画像検索を開く(この商品画像をアップロードして類似品を探す・要ログイン)",
         IMAGE_SEARCH_1688_URL,
-        imageUrl
+        first
       ),
     ];
   }
@@ -551,6 +653,8 @@ export class Alibaba1688Sourcing implements SourcingAdapter {
       rating: null,
       is_ad: false,
       match_score: null,
+      // 商品ではなく検索リンクなので、並び順は持たない(常に最後に置く)
+      source_rank: null,
     };
   }
 }

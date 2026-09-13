@@ -4,11 +4,14 @@
  * キーワードでメルカリのSOLD商品を新しい順に指定ページ数ぶん取得し、
  * セラー単位に集計して sellers / listings / seller_research_results に投入する。
  *
- *   npm run scrape:search -- --keyword "スマホ スタンド" --pages 10
+ *   npm run scrape:search -- --keyword "スマホスタンド" "スマホホルダー" --pages 10
  *   npm run scrape:search -- --keyword "ポーチ" --aruaru "インポート" "海外" --pages 5
  *   npm run scrape:search -- --keyword "トレカ" --pages 3 --used        # 中古も含む(せどり用)
  *   npm run scrape:search -- --keyword "工具" --pages 3 --sellers 50    # 名前を引くセラー数
  *   npm run scrape:search -- --keyword "LED" --pages 2 --dry            # DBに書かずに結果だけ見る
+ *
+ * キーワードはスペース/カンマ区切り、または --keyword を複数指定で最大10件。
+ * 複数あるとそれぞれ検索して結果をまとめます(優秀セラーが出やすくなります)。
  *
  * 流れ:
  *   1. 検索ページを1ページずつ開き、ページ自身が受け取った検索結果を読む
@@ -18,15 +21,24 @@
  *   4. DBへ投入
  */
 import "./_env";
-import { parseArgs, argOne, requireArg } from "./_env";
+import { parseArgs, argOne } from "./_env";
 import { MercariScraper } from "../lib/scraper/mercari";
 import { createSearch, saveListings, saveSellerResults, upsertSellers } from "../lib/scraper/persist";
 import { BlockedError, type ScrapedSeller } from "../lib/scraper/types";
 import { aggregateBySeller } from "../lib/engine/aggregate";
+import {
+  buildSearchQueries,
+  formatKeywordsLabel,
+  parseSearchWords,
+} from "../lib/scraper/search-words";
 
 const args = parseArgs(process.argv.slice(2));
-const keyword = requireArg(args, "keyword");
-const aruaru = args["aruaru"] ?? [];
+const keywords = parseSearchWords(args["keyword"] ?? []);
+if (!keywords.length) {
+  console.error("エラー: --keyword は必須です");
+  process.exit(2);
+}
+const aruaru = parseSearchWords(args["aruaru"] ?? [], { max: 20 });
 const pages = Number(argOne(args, "pages") ?? 10);
 /** 名前と評価数を引くセラーの上限。多すぎると1人ずつ開くので時間がかかる */
 const sellerLimit = Number(argOne(args, "sellers") ?? 60);
@@ -42,17 +54,19 @@ async function main() {
   const startedAt = Date.now();
 
   try {
+    const queryCount = buildSearchQueries(keywords, aruaru).length;
     console.log(
       `\n=== 3-1 セラーリサーチ ===\n` +
-        `  キーワード : ${keyword}\n` +
+        `  キーワード : ${formatKeywordsLabel(keywords)}（${keywords.length}語）\n` +
         `  あるあるワード: ${aruaru.length ? aruaru.join(" / ") : "(なし)"}\n` +
+        `  クエリ数   : ${queryCount}\n` +
         `  ページ数   : ${pages}\n` +
         `  商品状態   : ${includeUsed ? "中古も含む" : "中古は売上件数から除外(新品率は全件で計算)"}\n` +
         `  アクセス間隔: ${intervalMs}ms\n`
     );
 
     // ---- 1. 検索 ----
-    const listings = await scraper.searchSold(keyword, aruaru, pages, {
+    const listings = await scraper.searchSold(keywords, aruaru, pages, {
       includeUsed,
       onPage: ({ query, page, pages: n, got, total }) =>
         console.log(`    [${query}] ${page}/${n}ページ 取得${got}件 累計${total}件`),
@@ -137,7 +151,7 @@ async function main() {
     console.log("\n--- DBへ投入 ---");
     const keep = new Set(top.map((s) => s.seller_external_id));
     const kept = listings.filter((l) => keep.has(l.seller_external_id));
-    const searchId = await createSearch(keyword, aruaru);
+    const searchId = await createSearch(keywords, aruaru);
     const sellerIds = await upsertSellers(profiles);
     await saveListings(kept, profiles, log);
     await saveSellerResults(searchId, top, sellerIds, log);

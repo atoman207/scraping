@@ -13,6 +13,7 @@
  *   --seller <id>    sellers.id。そのセラーの鉄板商品(is_repeat=1)をまとめて処理する
  *   --mode   <m>     title / image。既定は両方
  *   --limit  <n>     探し方ごとの取得件数(既定12)
+ *   --images <n>     画像検索に使う写真の枚数(既定3)。1枚目だけでは当たらないことが多い
  *   --apply          単価が未入力の深掘りリストに最有力候補を反映する
  *   --interval <ms>  ページを開く間隔(既定3000)
  */
@@ -24,6 +25,7 @@ import { BlockedError, parseSourcingModes } from "../lib/scraper/types";
 
 const args = parseArgs(process.argv.slice(2));
 const limit = Number(argOne(args, "limit") ?? 12);
+const imageCount = Number(argOne(args, "images") ?? 5);
 const intervalMs = Number(argOne(args, "interval") ?? 3000);
 const apply = "apply" in args;
 const modes = args.mode?.length ? parseSourcingModes(args.mode) : (["title", "image"] as const).slice();
@@ -68,6 +70,7 @@ async function main() {
         productGroupId: id,
         modes: modes as ("title" | "image")[],
         limit,
+        imageCount,
         apply,
         intervalMs,
         log: (m) => console.log(m),

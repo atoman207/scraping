@@ -8,6 +8,7 @@
  * 結果になるので、「サイトが変わったのか、こちらのコードが壊れたのか」を切り分けられる。
  */
 import {
+  mercariPhotoUrls,
   parseAeCardText,
   scoreCandidate,
   toOriginalMercariImage,
@@ -131,6 +132,7 @@ function cand(over: Partial<SourcingCandidate>): SourcingCandidate {
     rating: null,
     is_ad: false,
     match_score: 0,
+    source_rank: null,
     ...over,
   };
 }
@@ -139,15 +141,34 @@ const list: SourcingCandidate[] = [
   cand({ external_id: "A", url: "https://x/a", match_score: 80, price_cny: 30 }),
   cand({ external_id: "B", url: "https://x/b", match_score: 90, price_cny: 50 }),
   cand({ external_id: "C", url: "https://x/c", match_score: 95, price_cny: null }),
-  cand({ external_id: "A", url: "https://x/a", match_score: 60, price_cny: 30, search_mode: "image" }),
+  cand({ external_id: "A", url: "https://x/a", match_score: 60, price_cny: 30, search_mode: "image", source_rank: 2 }),
   cand({ source_platform: "1688", search_mode: "link", url: "https://s.1688.com/x", match_score: null }),
 ];
 
 const ranked = rankCandidates(list);
-eq("同じ商品は1件にまとまる(一致度の高いほうを残す)", ranked.filter((c) => c.external_id === "A").length, 1);
-eq("一致度の高い順に並ぶ", ranked.slice(0, 2).map((c) => c.external_id), ["B", "A"]);
+// 同じ商品が両方の探し方で出るのは「当たり」の強い証拠。画面でも別々に出すので、
+// どちらの一覧にも残す(まとめるのは同じ探し方の中だけ)。
+eq(
+  "同じ商品が両方の探し方で出たら、どちらにも残す",
+  ranked.filter((c) => c.external_id === "A").length,
+  2
+);
+eq("タイトル検索は一致度の高い順に並ぶ", ranked.slice(0, 2).map((c) => c.external_id), ["B", "A"]);
 eq("価格の無い商品は後ろへ", ranked[2].external_id, "C");
+eq("画像検索はタイトル検索の後ろにまとめる", ranked[3].search_mode, "image");
 eq("1688の検索リンクは最後", ranked[ranked.length - 1].search_mode, "link");
+
+// 画像検索はサイトが返した順(=見た目の近い順)を守る。文字列の一致度では並べ替えない
+const imageOnly = rankCandidates([
+  cand({ external_id: "P", url: "https://x/p", search_mode: "image", source_rank: 3, match_score: 90, price_cny: 10 }),
+  cand({ external_id: "Q", url: "https://x/q", search_mode: "image", source_rank: 1, match_score: 5, price_cny: 80 }),
+  cand({ external_id: "R", url: "https://x/r", search_mode: "image", source_rank: 2, match_score: 50, price_cny: 40 }),
+]);
+eq(
+  "画像検索は見た目の近い順(source_rank)を守る",
+  imageOnly.map((c) => c.external_id),
+  ["Q", "R", "P"]
+);
 
 const best = pickBest(ranked);
 eq("最有力は一致度40%以上の中でいちばん安いもの", best?.external_id, "A");
@@ -160,6 +181,47 @@ const lowScores = rankCandidates([
 ]);
 eq("一致度が低くても候補は出す", pickBest(lowScores)?.external_id, "E");
 
+// 1688 は卸売で、同じ商品でも AliExpress(小売)より桁が1つ安い。
+// 中国輸入の原価計算に使うのは1688なので、そちらを先に採る。
+const withCn = rankCandidates([
+  cand({ external_id: "AE", url: "https://x/ae", search_mode: "title", match_score: 90, price_cny: 20 }),
+  cand({ external_id: "CN1", url: "https://x/c1", source_platform: "1688", search_mode: "image", source_rank: 1, price_cny: 9 }),
+  cand({ external_id: "CN2", url: "https://x/c2", source_platform: "1688", search_mode: "image", source_rank: 2, price_cny: 5, photo_hits: 2 }),
+  cand({ external_id: "CN3", url: "https://x/c3", source_platform: "1688", search_mode: "image", source_rank: 3, price_cny: 3 }),
+]);
+eq(
+  "1688で複数の写真から一致した候補を最優先する",
+  pickBest(withCn)?.external_id,
+  "CN2"
+);
+eq(
+  "1688が1件も無ければ AliExpress に戻る",
+  pickBest(rankCandidates([cand({ external_id: "AE", url: "https://x/ae", match_score: 90, price_cny: 20 })]))?.external_id,
+  "AE"
+);
+// 1688 のタイトル検索は、相手が返した順(関連度順)を守る
+const cnTitleOrder = rankCandidates([
+  cand({ external_id: "T3", url: "https://x/t3", source_platform: "1688", search_mode: "title", source_rank: 3, price_cny: 1 }),
+  cand({ external_id: "T1", url: "https://x/t1", source_platform: "1688", search_mode: "title", source_rank: 1, price_cny: 9 }),
+  cand({ external_id: "T2", url: "https://x/t2", source_platform: "1688", search_mode: "title", source_rank: 2, price_cny: 5 }),
+]);
+eq(
+  "1688のキーワード検索は相手が返した順を守る(安い順に並べ替えない)",
+  cnTitleOrder.map((c) => c.external_id),
+  ["T1", "T2", "T3"]
+);
+
+// 画像検索しか無いときは、見た目がいちばん近い上位3件から選ぶ。
+// 一致度で確かめられないので、それより下は当てにしない。
+const imageBest = rankCandidates([
+  cand({ external_id: "S", url: "https://x/s", search_mode: "image", source_rank: 1, price_cny: 60 }),
+  cand({ external_id: "T", url: "https://x/t", search_mode: "image", source_rank: 2, price_cny: 30 }),
+  cand({ external_id: "U", url: "https://x/u", search_mode: "image", source_rank: 3, price_cny: 45 }),
+  // 4件目は見た目の近さが下位。いくら安くても自動では採らない
+  cand({ external_id: "V", url: "https://x/v", search_mode: "image", source_rank: 9, price_cny: 1 }),
+]);
+eq("画像検索だけのときは上位3件から安いものを選ぶ", pickBest(imageBest)?.external_id, "T");
+
 // ============================================================ 5. 画像URL
 console.log("\n=== 5. 画像URLの読み替え ===");
 
@@ -168,6 +230,27 @@ eq(
   toOriginalMercariImage("https://static.mercdn.net/thumb/item/webp/m83092432535_1.jpg?1788439023"),
   "https://static.mercdn.net/item/detail/orig/photos/m83092432535_1.jpg"
 );
+eq(
+  "同じ出品の写真を3枚ぶん組み立てる(1枚目は渡されたURLのまま)",
+  mercariPhotoUrls("https://static.mercdn.net/thumb/item/webp/m83092432535_1.jpg?1788439023", 3),
+  [
+    // 1枚目だけは、元画像が消えていてもサムネイルに落とせるよう渡されたURLを使う
+    "https://static.mercdn.net/thumb/item/webp/m83092432535_1.jpg?1788439023",
+    "https://static.mercdn.net/item/detail/orig/photos/m83092432535_2.jpg",
+    "https://static.mercdn.net/item/detail/orig/photos/m83092432535_3.jpg",
+  ]
+);
+eq(
+  "枚数ぴったりを返す(同じ画像を2回検索しない)",
+  mercariPhotoUrls("https://static.mercdn.net/thumb/item/webp/m83092432535_1.jpg", 2).length,
+  2
+);
+eq(
+  "メルカリ以外のURLはそのまま1枚だけ返す",
+  mercariPhotoUrls("https://assets.mercari-shops-static.com/x.jpg", 3),
+  ["https://assets.mercari-shops-static.com/x.jpg"]
+);
+
 eq(
   "メルカリShopsの画像は読み替えない(URLの作りが違う)",
   toOriginalMercariImage("https://assets.mercari-shops-static.com/-/small/plain/2JWHAwaGa49ZNLXTrFcstk.jpg@webp"),

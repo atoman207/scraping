@@ -44,8 +44,9 @@ export interface SellerResearchAdapter {
    * キーワード(+あるあるワードでの絞り込み)でSOLD商品を検索し、新しい順に
    * maxPages 分読み込む。戻り値の各要素はどのセラーの出品かが分かる
    * (seller_external_id, seller_name を含む)。
+   * キーワードは複数可(文字列または配列)。複数時はそれぞれ検索して結果をまとめる。
    */
-  searchSold(keyword: string, aruaruWords: string[], maxPages?: number): Promise<ScrapedListing[]>;
+  searchSold(keyword: string | string[], aruaruWords: string[], maxPages?: number): Promise<ScrapedListing[]>;
 }
 
 /**
@@ -105,8 +106,33 @@ export type SourcingCandidate = {
   rating: number | null;
   /** 広告枠の商品か(検索順位ではなく出稿で上に出ているもの) */
   is_ad: boolean;
-  /** 元の商品タイトルとの一致度 0-100。並べ替えと目視確認の手がかり */
+  /**
+   * 元の商品タイトルとの一致度 0-100。
+   *
+   * **タイトル検索のためだけの指標**。画像検索は「名前は違うが見た目が同じ」商品を
+   * 拾うのが値打ちなので、この値が低いことは候補が悪いことを意味しない。
+   * そのため画像検索の結果では画面に出さず、並べ替えにも使わない。
+   */
   match_score: number | null;
+  /**
+   * 1688 の「回头率(リピート率 %)」。店の信用度でいちばん効く指標。
+   * AliExpress には無いので null のままになる。
+   */
+  repeat_rate?: number | null;
+  /** 店のバッジ(実力商家・厳選工場 など)。日本語に直したもの */
+  badges?: string[] | null;
+  /** 何枚の写真から見つかったか。複数枚から出た商品ほど確からしい */
+  photo_hits?: number | null;
+  /** 出品された日。長く売られている商品ほど定番である目安になる */
+  listed_at?: string | null;
+  /**
+   * 検索サイトが返してきた順番(1が先頭)。
+   *
+   * 画像検索はサイト側が**見た目の近い順**に並べて返すので、その順番そのものが
+   * いちばん確かな手がかりになる。こちらで文字列の一致度で並べ替えてしまうと
+   * その情報が失われるため、順番を持ち歩いて画像検索の並びに使う。
+   */
+  source_rank: number | null;
 };
 
 export interface SourcingAdapter {
@@ -115,9 +141,12 @@ export interface SourcingAdapter {
   searchCandidates(title: string, limit?: number): Promise<SourcingCandidate[]>;
   /**
    * 商品画像から類似商品を検索する。
-   * 画像検索に対応していないプラットフォームは実装しない(呼び出し側で分岐する)。
+   * 画像に対応していないプラットフォームは実装しない(呼び出し側で分岐する)。
+   *
+   * 画像は**複数枚**受け取る。メルカリの1枚目は文字入れや箱の写真のことが多く、
+   * それ1枚だけで探すと当たらないため、2枚目以降でも探して結果を合わせる。
    */
-  searchByImage?(imageUrl: string, limit?: number): Promise<SourcingCandidate[]>;
+  searchByImage?(imageUrls: string[], limit?: number, sourceTitle?: string): Promise<SourcingCandidate[]>;
 }
 
 /** サイト側にブロックされた(bot判定・レート制限)ことを表すエラー */

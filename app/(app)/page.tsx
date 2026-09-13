@@ -130,7 +130,7 @@ export default async function SellerResearchPage() {
         withSearchForm
         buttonLabel="メルカリを検索"
         title="メルカリのSOLD検索を実行"
-        description="検索結果から出品者を特定してDBに保存し、セラーごとの集計まで自動で行います。ページ数と件数を増やすほど時間がかかります(1ページ約120件、出品者の特定は1件あたり約3秒)。"
+        description="キーワードは1行に1つ・最大10個。関連語を複数入れると有力セラーが見つかりやすくなります。ページ数と件数を増やすほど時間がかかります(1ページ約120件、出品者の特定は1件あたり約3秒)。"
       />
 
       {needsMigration && <MigrationNotice what="アバター・セラー分類・新品率" />}

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1688画像検索の改善 — お客様向け説明</title>
+    <style>
+      :root {
+        --text: #18181b;
+        --muted: #52525b;
+        --border: #e4e4e7;
+        --bg: #fafafa;
+        --card: #fff;
+        --good: #166534;
+        --good-bg: #dcfce7;
+        --warn-bg: #fef3c7;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+        line-height: 1.7;
+        font-size: 15px;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      h2 { font-size: 17px; margin: 28px 0 10px; }
+      p { margin: 0 0 12px; color: var(--muted); }
+      .lead { color: var(--text); font-size: 15.5px; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card);
+        border: 1px solid var(--border);
+        margin: 12px 0 20px;
+        font-size: 14px;
+      }
+      th, td {
+        border-top: 1px solid var(--border);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+      thead th { background: #f4f4f5; font-size: 12px; color: var(--muted); }
+      tbody th { width: 22%; white-space: nowrap; color: var(--text); }
+      .before { background: #fff7ed; }
+      .after { background: #f0fdf4; }
+      figure {
+        margin: 16px 0 8px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      figure img { display: block; width: 100%; }
+      figcaption {
+        padding: 10px 14px 14px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .badge {
+        display: inline-block;
+        background: var(--good-bg);
+        color: var(--good);
+        font-weight: 700;
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .note {
+        background: var(--warn-bg);
+        border: 1px solid #fde68a;
+        padding: 12px 14px;
+        border-radius: 8px;
+        font-size: 13.5px;
+        color: var(--text);
+        margin: 16px 0;
+      }
+      ul { color: var(--muted); padding-left: 1.2em; }
+      li { margin-bottom: 6px; }
+      @media print {
+        body { background: #fff; }
+        main { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>1688画像検索 — 改善前と改善後の違い</h1>
+      <p class="lead">
+        「仕入れ候補を探す」の画像検索について、何が変わったかを画面付きでご説明します。
+      </p>
+
+      <h2>1. いちばん分かりやすい変化</h2>
+      <p>
+        候補カードに緑色の
+        <span class="badge">写真2枚一致</span>
+        /
+        <span class="badge">写真3枚一致</span>
+        が出るようになりました。
+        これは「メルカリの写真を複数枚使って探したところ、何枚からも同じ商品に行き着いた」という意味です。
+        <strong>確度がいちばん高い候補</strong>なので、上のほうに出ます。
+      </p>
+
+      <figure>
+        <img src="./1688-photo-match.png" alt="写真2枚一致バッジが表示された1688画像検索の画面" />
+        <figcaption>
+          実画面：1688画像検索の候補。緑の「写真2枚一致」が付いているものが、複数角度から一致した有力候補です。
+          価格は卸売（元建て）なので、この一覧を見たその場で原価・利益の判断ができます。
+        </figcaption>
+      </figure>
+
+      <h2>2. 改善前 → 改善後</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th class="before">改善前</th>
+            <th class="after">改善後（いま）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>並べ方</th>
+            <td class="before">商品名の文字が近い順 → 見た目が近い商品が下に沈むことがあった</td>
+            <td class="after">複数の写真から見つかった順 → 見た目が近い候補が上に来る</td>
+          </tr>
+          <tr>
+            <th>使う写真</th>
+            <td class="before">ほぼ1枚。1枚目は文字入れ・箱写真が多く、単独だと外れやすい</td>
+            <td class="after">同じ出品の写真を最大5枚使用。角度が違っても当たりやすい</td>
+          </tr>
+          <tr>
+            <th>目印</th>
+            <td class="before">なし</td>
+            <td class="after">「写真N枚一致」バッジで確度が一目で分かる</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>3. 他社ツールとの違い</h2>
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>他社ツール</th>
+            <th>本システム</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>準備</th>
+            <td>1688アカウント ＋ Chrome拡張機能が必要</td>
+            <td>不要。ボタンを押すだけ</td>
+          </tr>
+          <tr>
+            <th>動作場所</th>
+            <td>ご自身のPCのChrome上</td>
+            <td>サーバー側で完結</td>
+          </tr>
+          <tr>
+            <th>スマホ</th>
+            <td>拡張が使えず実質不可</td>
+            <td>スマートフォンからも利用可</td>
+          </tr>
+          <tr>
+            <th>価格</th>
+            <td>—</td>
+            <td>1688の卸売価格を原価計算に直接取り込み。候補を見た瞬間に黒字判定できる</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        参考実測（チェーンロック）：1688 は ¥69〜371、AliExpress は ¥171〜3,321。
+        卸売の1688のほうが桁ひとつ安くなることが多く、本システムは1688を優先して表示します。
+      </div>
+
+      <h2>4. お客様側で確認する手順</h2>
+      <ul>
+        <li>③ 深掘りリストで対象商品の「仕入れ候補を探す」を実行する</li>
+        <li>「仕入れ候補」を開き、「1688 画像検索」を開く</li>
+        <li>緑の「写真N枚一致」が付いた候補を優先して確認する</li>
+        <li>「採用」を押すと、単価と仕入先URLが原価計算に入ります</li>
+      </ul>
+
+      <p style="margin-top: 28px; font-size: 12px;">
+        アプリ内の「使い方ガイド」→「画像検索の改善 — 何が変わったか」にも同じ内容を掲載しています。
+      </p>
+    </main>
+  </body>
+</html>

@@ -13,6 +13,7 @@ import {
 } from "../../../lib/db";
 import { TARIFF_CATEGORIES } from "../../../lib/engine/cost";
 import ScrapeRunner from "../../ScrapeRunner";
+import { readStatus, statusLine } from "../../../lib/scraper/session-1688jp";
 import {
   IconAlert,
   IconCart,
@@ -190,7 +191,11 @@ function CandidateCard({ c, deepdiveId }: { c: SourcingCandidateRow; deepdiveId:
               <span className="hint"> (¥{Math.round(c.price_jpy).toLocaleString()})</span>
             )}
           </span>
-          {c.match_score !== null && (
+          {/* 一致度はタイトル検索にしか意味がない。
+              画像検索は「名前は違うが見た目が同じ」商品を拾うのが値打ちなので、
+              一致度が低いことは候補が悪いことを意味しない。
+              それでも数字を出すと、良い候補が悪く見えてしまうため出さない。 */}
+          {c.search_mode === "title" && c.match_score !== null && (
             <span
               className={`pill ${c.match_score >= 60 ? "pill-good" : c.match_score >= 30 ? "pill-info" : "pill-mute"}`}
               title="元の商品タイトルとどれくらい合っているか"
@@ -202,7 +207,36 @@ function CandidateCard({ c, deepdiveId }: { c: SourcingCandidateRow; deepdiveId:
             {c.search_mode === "image" ? <IconImage size={10} /> : <IconSearch size={10} />}
             {MODE_LABEL[c.search_mode] ?? c.search_mode}
           </span>
-          {c.orders_count !== null && <span className="hint">{c.orders_count.toLocaleString()}点販売</span>}
+          {/* どこから来た候補かは、価格の桁が違うので必ず見せる(元 と 円) */}
+          {c.source_platform === "1688" && <span className="pill pill-info">1688</span>}
+          {/* 複数の写真から見つかった候補は、それだけ確からしい。いちばん先に出す */}
+          {(c.photo_hits ?? 0) > 1 && (
+            <span className="pill pill-good" title="複数の写真から同じ商品に行き着きました">
+              写真{c.photo_hits}枚一致
+            </span>
+          )}
+          {/* 1688 の店の信用度。AliExpress には無い情報なので、あるときだけ出す */}
+          {c.repeat_rate !== null && c.repeat_rate !== undefined && (
+            <span
+              className={`pill ${c.repeat_rate >= 20 ? "pill-good" : "pill-mute"}`}
+              title="この店で買った人が、また買っている割合(回头率)"
+            >
+              リピート {c.repeat_rate}%
+            </span>
+          )}
+          {/* 1688 の店舗バッジ。厳選工場や実力商家は、それだけで選ぶ理由になる */}
+          {c.badges?.slice(0, 2).map((b) => (
+            <span key={b} className="pill pill-info" title="1688の店舗バッジ">
+              {b}
+            </span>
+          ))}
+          {c.orders_count !== null && (
+            <span className="hint">
+              {c.source_platform === "1688" ? "月販" : ""}
+              {c.orders_count.toLocaleString()}
+              {c.source_platform === "1688" ? "" : "点販売"}
+            </span>
+          )}
           {c.rating !== null && (
             <span className="hint" style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
               <IconStar size={10} />
@@ -228,28 +262,67 @@ function CandidateCard({ c, deepdiveId }: { c: SourcingCandidateRow; deepdiveId:
   );
 }
 
+/**
+ * 1688Japan との接続状態。
+ *
+ * 1688 の候補はこの接続ひとつに乗っているので、切れていることに
+ * 気づかないまま「候補が出ない」と悩む事態を防ぐ。
+ * ここは**相手に問い合わせない**(記録しておいた結果を読むだけ)ので、
+ * 画面を開くたびに通信が増えることはない。
+ */
+function Session1688Panel() {
+  const status = readStatus();
+  const line = statusLine(status);
+  const tone =
+    line.tone === "ok" ? "note-ok" : line.tone === "warn" ? "note-info" : "note-error";
+  const Icon = line.tone === "ok" ? IconCheck : IconAlert;
+
+  return (
+    <div className={`note ${tone}`} style={{ marginBottom: 18 }}>
+      <Icon size={15} />
+      <span>
+        <strong>1688 仕入れ候補の接続</strong> — {line.text}
+        {line.tone !== "ok" && (
+          <>
+            <br />
+            サーバーで <code>npm run login:1688jp</code> を実行し、開いた画面で確認コードを入れると復旧します。
+            それまでは AliExpress の候補と、1688 の検索リンクだけが出ます。
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
 /** 探し方ごとのまとまり。先頭6件を出し、残りは畳んでおく */
 function CandidateGroup({
   label,
+  note,
   icon,
   list,
   deepdiveId,
+  /** 画像検索など、開いたままだと邪魔なグループは閉じた状態から始める */
+  defaultOpen = true,
 }: {
   label: string;
+  /** 並び順の根拠。何を見て判断すればよいかが分からないと候補は使えない */
+  note?: string;
   icon: React.ReactNode;
   list: SourcingCandidateRow[];
   deepdiveId: number;
+  defaultOpen?: boolean;
 }) {
   if (!list.length) return null;
   const top = list.slice(0, 6);
   const rest = list.slice(6);
   return (
-    <div className="cand-group">
-      <div className="cand-group-head">
+    <details className="cand-group" {...(defaultOpen ? { open: true } : {})}>
+      <summary className="cand-group-head">
         {icon}
         {label}
         <span className="badge badge-muted">{list.length}件</span>
-      </div>
+        {note && <span className="hint" style={{ fontWeight: 400 }}>{note}</span>}
+      </summary>
       <div className="cand-grid">
         {top.map((c) => (
           <CandidateCard key={c.id} c={c} deepdiveId={deepdiveId} />
@@ -265,7 +338,7 @@ function CandidateGroup({
           </div>
         </details>
       )}
-    </div>
+    </details>
   );
 }
 
@@ -276,8 +349,8 @@ function CandidateGroup({
  * 画像検索は「見た目は同じだがタイトルが全然違う商品」を拾うのが値打ちで、
  * 一致度で一緒に並べると下に沈んで見えなくなるため。
  *
- * 商品そのものを取れるのはAliExpressだけなので、1688 は
- * 「人が開けばそのまま検索できるURL」を下にまとめて出す(ログインが必要なため)。
+ * 候補の画像グリッドは注文作業の邪魔になるので、既定では折りたたんでおく。
+ * 採用済みがあれば、その1件だけ常にコンパクト表示する。
  */
 function SourcingSection({
   item,
@@ -286,42 +359,120 @@ function SourcingSection({
   item: DeepdiveComputed;
   candidates: SourcingCandidateRow[];
 }) {
-  const byTitle = candidates.filter((c) => c.search_mode === "title");
-  const byImage = candidates.filter((c) => c.search_mode === "image");
+  // 仕入元ごとに分ける。1688 は元建て・AliExpress は円建てで、
+  // 店の信用度の出し方も違うので、混ぜて並べると見比べられない。
+  const cn = (c: SourcingCandidateRow) => c.source_platform === "1688";
+  const aliTitle = candidates.filter((c) => c.search_mode === "title" && !cn(c));
+  const aliImage = candidates.filter((c) => c.search_mode === "image" && !cn(c));
+  const cnTitle = candidates.filter((c) => c.search_mode === "title" && cn(c));
+  const cnImage = candidates.filter((c) => c.search_mode === "image" && cn(c));
   const links = candidates.filter((c) => c.search_mode === "link");
-  const products = byTitle.length + byImage.length;
+  const products = aliTitle.length + aliImage.length + cnTitle.length + cnImage.length;
   const fetchedAt = candidates[0]?.fetched_at ?? null;
-  const query = byTitle[0]?.query ?? null;
+  // 見出しに出す検索語。1688 は中国語、AliExpress は日本語なので両方出す
+  const zhQuery = cnTitle[0]?.query ?? null;
+  const jaQuery = aliTitle[0]?.query ?? null;
+  const picked = candidates.find((c) => c.is_picked) ?? null;
+  const imageCount = aliImage.length + cnImage.length;
 
   return (
     <div className="sourcing">
-      <div className="sourcing-head">
-        <IconGlobe size={14} />
-        仕入れ候補
-        <span className="badge badge-muted">{products}件</span>
-        {query && <span className="hint">検索語「{query}」</span>}
-        {fetchedAt && <span className="hint">取得 {fetchedAt.slice(0, 16)}</span>}
-      </div>
+      {/* 採用済みは注文作業で常に見たいので、折りたたみの外に出す */}
+      {picked && (
+        <div className="sourcing-picked">
+          {picked.image_url ? (
+            <img
+              className="cand-img cand-img-sm"
+              src={picked.image_url}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="cand-img cand-img-sm" />
+          )}
+          <div className="sourcing-picked-body">
+            <span className="pill pill-good">
+              <IconCheck size={10} /> 採用中
+            </span>
+            <a className="cand-title" href={picked.url} target="_blank" rel="noreferrer" title={picked.title}>
+              {picked.title}
+              <IconExternal size={11} />
+            </a>
+            <span className="cand-meta">
+              <span className="cand-price">
+                {picked.price_cny !== null ? `${picked.price_cny}元` : "価格不明"}
+                {picked.price_jpy !== null && (
+                  <span className="hint"> (¥{Math.round(picked.price_jpy).toLocaleString()})</span>
+                )}
+              </span>
+              {picked.source_platform === "1688" && <span className="pill pill-info">1688</span>}
+            </span>
+          </div>
+        </div>
+      )}
 
       {products > 0 ? (
-        <>
-          <CandidateGroup
-            label="タイトル検索"
-            icon={<IconSearch size={12} />}
-            list={byTitle}
-            deepdiveId={item.deepdive_id}
-          />
-          <CandidateGroup
-            label="画像検索"
-            icon={<IconImage size={12} />}
-            list={byImage}
-            deepdiveId={item.deepdive_id}
-          />
-        </>
+        <details className="sourcing-fold">
+          <summary className="sourcing-head">
+            <IconGlobe size={14} />
+            仕入れ候補
+            <span className="badge badge-muted">{products}件</span>
+            {imageCount > 0 && (
+              <span className="badge badge-muted">画像検索 {imageCount}件</span>
+            )}
+            {zhQuery && <span className="hint">1688「{zhQuery}」</span>}
+            {jaQuery && <span className="hint">AliExpress「{jaQuery}」</span>}
+            {fetchedAt && <span className="hint">取得 {fetchedAt.slice(0, 16)}</span>}
+            <span className="sourcing-fold-hint hint">クリックで開閉（画像はここに畳んでいます）</span>
+          </summary>
+
+          <div className="sourcing-body">
+            {/* 1688 は卸売なので、同じ商品でも AliExpress(小売)より桁が1つ安いことが多い。
+                中国輸入の原価計算に使うのはこちらなので、先に出す。 */}
+            <CandidateGroup
+              label="1688 キーワード検索"
+              note="1688Japan 経由。価格は元(CNY)・卸売価格です"
+              icon={<IconSearch size={12} />}
+              list={cnTitle}
+              deepdiveId={item.deepdive_id}
+            />
+            <CandidateGroup
+              label="1688 画像検索"
+              note="複数の写真から見つかった順。価格は元(CNY)・卸売価格です"
+              icon={<IconImage size={12} />}
+              list={cnImage}
+              deepdiveId={item.deepdive_id}
+              defaultOpen={false}
+            />
+            <CandidateGroup
+              label="AliExpress タイトル検索"
+              note="タイトルの一致度が高い順。小売価格なので1688より高めです"
+              icon={<IconSearch size={12} />}
+              list={aliTitle}
+              deepdiveId={item.deepdive_id}
+            />
+            <CandidateGroup
+              label="AliExpress 画像検索"
+              note="見た目が近い順。小売価格なので1688より高めです"
+              icon={<IconImage size={12} />}
+              list={aliImage}
+              deepdiveId={item.deepdive_id}
+              defaultOpen={false}
+            />
+          </div>
+        </details>
       ) : (
-        <p className="hint" style={{ margin: "2px 0 8px" }}>
-          まだ候補がありません。下のボタンでAliExpressを検索してください。
-        </p>
+        <>
+          <div className="sourcing-head">
+            <IconGlobe size={14} />
+            仕入れ候補
+            <span className="badge badge-muted">0件</span>
+          </div>
+          <p className="hint" style={{ margin: "2px 0 8px" }}>
+            まだ候補がありません。下のボタンでAliExpressを検索してください。
+          </p>
+        </>
       )}
 
       {links.length > 0 && (
@@ -424,6 +575,8 @@ export default async function DeepdiveListPage() {
           </p>
         </details>
       )}
+
+      <Session1688Panel />
 
       {error && (
         <div className="note note-error">
@@ -698,12 +851,13 @@ export default async function DeepdiveListPage() {
                   kind="sourcing"
                   payload={{ product_group_id: item.product_group_id, apply: true }}
                   buttonLabel="仕入れ候補を探す"
-                  title="仕入れ候補の自動検索(AliExpress / 1688)"
-                  description="商品タイトルと商品画像でAliExpressを検索し、候補を上に並べます。単価が未入力の場合だけ、最有力候補を自動で反映します(入力済みの値は変えません)。1688はログインが必要なため検索リンクのみです。"
+                  title="仕入れ候補の自動検索(AliExpress・サーバー側)"
+                  description="商品タイトルと商品画像でAliExpressを検索し、候補を上に並べます。単価が未入力の場合だけ、最有力候補を自動で反映します(入力済みの値は変えません)。"
                   withSourcingOptions
                   compact
                 />
               </div>
+
             </div>
           );
         })}

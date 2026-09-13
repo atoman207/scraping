@@ -20,3 +20,6 @@ SellerScope調査を開始.cmd
 # バックアップ(データ本体なのでリポジトリには入れない)
 backups/
 ops/backup.log
+
+# 仕入れ先サイトのログインセッション(Cookieそのもの。絶対にコミットしない)
+secrets/

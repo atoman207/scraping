@@ -308,6 +308,20 @@ ALTER TABLE sellers
 ALTER TABLE app_users
   ADD COLUMN IF NOT EXISTS password_enc text;
 
+-- 1688 の候補から取れる追加情報。
+--   1688Japan(公式総代理店)経由で取ると、AliExpress には無い
+--   「店の信用度」まで分かるので、そこを取りこぼさない。
+ALTER TABLE sourcing_candidates
+  -- 回头率(リピート率 %)。「その店で買った人がまた買っている割合」で、
+  -- 1688 の店の良し悪しを見るときにいちばん効く指標
+  ADD COLUMN IF NOT EXISTS repeat_rate double precision,
+  -- 店舗バッジ(実力商家・厳選工場・誠信通・1688厳選)。文字列の配列
+  ADD COLUMN IF NOT EXISTS badges jsonb,
+  -- 何枚の写真から見つかったか。複数枚から出た商品ほど確からしい
+  ADD COLUMN IF NOT EXISTS photo_hits integer,
+  -- 1688 に出品された日。長く売られている商品ほど定番である目安になる
+  ADD COLUMN IF NOT EXISTS listed_at text;
+
 ALTER TABLE product_groups
   ADD COLUMN IF NOT EXISTS stock_count integer,
   ADD COLUMN IF NOT EXISTS min_price double precision,

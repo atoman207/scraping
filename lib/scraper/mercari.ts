@@ -59,6 +59,7 @@ import {
   type SellerDeepdiveAdapter,
   type SellerResearchAdapter,
 } from "./types";
+import { buildSearchQueries, parseSearchWords } from "./search-words";
 
 /** ページ自身が受け取るレスポンスを捕捉するときのキー */
 const CAPTURE_SEARCH = "search";
@@ -230,12 +231,12 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
    *   (全件の名前を引くと無駄なアクセスが増えるため。参考にした既存サービスも
    *    「巡回」と「セラー名の取得」を別フェーズに分けている)。
    *
-   * @param keyword     検索キーワード
-   * @param aruaruWords 「あるあるワード」。指定すると keyword と組み合わせて個別に検索する
+   * @param keyword     検索キーワード(1語、または複数。文字列でも配列でも可)
+   * @param aruaruWords 「あるあるワード」。指定すると各キーワードと組み合わせて個別に検索する
    * @param maxPages    1クエリあたり読むページ数(目安10)
    */
   async searchSold(
-    keyword: string,
+    keyword: string | string[],
     aruaruWords: string[] = [],
     maxPages = 10,
     opts: {
@@ -246,8 +247,10 @@ export class MercariScraper implements SellerResearchAdapter, SellerDeepdiveAdap
     } = {}
   ): Promise<(ScrapedListing & { matched_keyword: string; is_new: boolean | null; updated_at: string | null })[]> {
     const includeUsed = opts.includeUsed ?? false;
-    // あるあるワードは絞り込み用。指定があればキーワードと組み合わせて個別に検索する
-    const queries = aruaruWords.length ? aruaruWords.map((w) => `${keyword} ${w}`.trim()) : [keyword];
+    // キーワードは複数可(OR)。あるあるがあれば keyword × あるある の組み合わせで検索する
+    const keywords = parseSearchWords(keyword);
+    if (!keywords.length) throw new Error("キーワードが必要です");
+    const queries = buildSearchQueries(keywords, aruaruWords);
 
     // ページ自身が受け取る検索レスポンスと配送方法マスタを捕捉する
     this.session.captureJson(CAPTURE_SEARCH, /\/v2\/entities:search/);

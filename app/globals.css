@@ -41,10 +41,10 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   --shadow-lg: 0 16px 48px -16px rgba(0, 0, 0, 0.3);
 
-  /* 画面枠の寸法(サイドバー幅・ヘッダー高さ・本文の最大幅) */
+  /* 画面枠の寸法(サイドバー幅・ヘッダー高さ)。本文は画面幅いっぱい使う */
   --side-w: 248px;
   --header-h: 58px;
-  --content-max: 1180px;
+  --content-pad-x: 16px;
 }
 
 * {
@@ -353,7 +353,7 @@ body {
   align-items: center;
   flex-wrap: nowrap;
   gap: 16px;
-  padding: 0 28px;
+  padding: 0 var(--content-pad-x);
   background: var(--surface);
 }
 /* 画面名が長いときは、件数を押し出さずに自分が省略される */
@@ -410,9 +410,11 @@ body {
   background: var(--bg);
 }
 .app-content {
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: 30px 28px 90px;
+  /* 最大幅で中央寄せすると右に余白が残るので、サイドバー以外は幅いっぱい使う */
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 24px var(--content-pad-x) 90px;
 }
 
 /* 本文の幅は .app-content が決める。
@@ -688,11 +690,69 @@ table.data tbody tr:hover {
 .input-wide {
   width: 100%;
 }
+textarea.input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.45;
+  font-family: inherit;
+}
 .form-row {
   display: flex;
   gap: 12px;
   align-items: flex-end;
   flex-wrap: wrap;
+}
+
+/* セラーリサーチ: キーワード欄を広く、複数入力が分かるようにする */
+.search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.search-keywords-row {
+  align-items: stretch;
+  flex-wrap: nowrap;
+}
+.field-keyword {
+  flex: 1.4 1 280px;
+  min-width: 0;
+}
+.field-aruaru {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.field-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.field-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint, var(--text-muted));
+  opacity: 0.85;
+}
+.input-keywords {
+  min-height: 96px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+}
+.keyword-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .search-keywords-row {
+    flex-wrap: wrap;
+  }
+  .field-keyword,
+  .field-aruaru {
+    flex: 1 1 100%;
+  }
 }
 
 /* ---------- 通知/空状態 ---------- */
@@ -1773,11 +1833,59 @@ code {
    3-3 仕入れ候補(AliExpress / 1688)
    一覧の各行の下に、候補をカードで並べる。
    画像・価格・一致度を1目で比べられるよう、横並びの小さなカードにする。
+   注文作業時は画像グリッドが邪魔なので、既定では折りたたむ。
    =============================================================== */
 .sourcing {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px dashed var(--border);
+}
+
+.sourcing-picked {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--r);
+  background: var(--brand-soft);
+}
+.sourcing-picked-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sourcing-picked .cand-title {
+  -webkit-line-clamp: 1;
+}
+
+.sourcing-fold > summary.sourcing-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+}
+.sourcing-fold > summary.sourcing-head::-webkit-details-marker {
+  display: none;
+}
+.sourcing-fold > summary.sourcing-head::before {
+  content: "▶";
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+.sourcing-fold[open] > summary.sourcing-head::before {
+  content: "▼";
+}
+.sourcing-fold-hint {
+  margin-left: auto;
+  font-weight: 400;
+}
+.sourcing-body {
+  margin-top: 10px;
 }
 
 .sourcing-head {
@@ -1823,6 +1931,10 @@ code {
   border-radius: var(--r-sm);
   background: var(--surface-2);
   border: 1px solid var(--border);
+}
+.cand-img-sm {
+  width: 40px;
+  height: 40px;
 }
 
 .cand-body {
@@ -1895,7 +2007,10 @@ code {
 .cand-group + .cand-group {
   margin-top: 12px;
 }
-.cand-group-head {
+.cand-group > summary.cand-group-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1903,6 +2018,23 @@ code {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-faint);
+}
+.cand-group > summary.cand-group-head::-webkit-details-marker {
+  display: none;
+}
+.cand-group > summary.cand-group-head::before {
+  content: "▶";
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.cand-group[open] > summary.cand-group-head::before {
+  content: "▼";
+}
+.cand-group[open] > summary.cand-group-head {
+  margin-bottom: 6px;
+}
+.cand-group:not([open]) > summary.cand-group-head {
+  margin-bottom: 0;
 }
 .cand-group-head svg {
   color: var(--text-faint);

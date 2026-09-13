@@ -62,6 +62,40 @@ const PHASE_LABEL: Record<Phase, string> = {
   image: "画像で探す",
 };
 
+/**
+ * 画像検索で使う写真の枚数(所要時間の目安を出すためだけに持っている)。
+ * 実際に何枚使うかを決めるのはサーバー側 — lib/scraper/sourcing-run.ts の imageCount。
+ * あちらの既定値を変えたら、ここも合わせること。
+ */
+const IMAGE_PHOTOS = 3;
+
+/** キーワード入力の認知用サンプル。原本と同じ「複数・1行1つ」の入れ方を見せる */
+const KEYWORD_EXAMPLES: { label: string; keywords: string[]; aruaru: string[] }[] = [
+  {
+    label: "スマホ周り",
+    keywords: ["車載ホルダー", "スマホスタンド"],
+    aruaru: ["インポート", "海外輸入"],
+  },
+  {
+    label: "ガジェット一式",
+    keywords: [
+      "ワイヤレス充電器",
+      "充電ケーブル",
+      "リングライト",
+      "スマホ冷却ファン",
+      "ゲームパッド",
+      "キーボード",
+      "スマホ三脚",
+    ],
+    aruaru: ["海外"],
+  },
+  {
+    label: "ポーチ×刺繍",
+    keywords: ["ポーチ", "化粧ポーチ"],
+    aruaru: ["刺繍", "花柄"],
+  },
+];
+
 const PHASE_ORDER: Record<Props["kind"], Phase[]> = {
   search: ["crawl", "names", "aggregate", "save"],
   seller: ["list", "ship", "save", "cluster"],
@@ -272,66 +306,98 @@ export default function ScrapeRunner({
           </button>
         </div>
       ) : withSearchForm ? (
-        <div className="form-row">
-          <label className="field" style={{ flex: 1, minWidth: 220 }}>
-            キーワード
-            <input
-              className="input input-wide"
-              placeholder="例: スマホスタンド"
-              value={form.keyword}
-              disabled={running}
-              onChange={(e) => setForm({ ...form, keyword: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && form.keyword.trim() && canRun) start();
-              }}
-            />
-          </label>
-          <label className="field" style={{ flex: 1, minWidth: 180 }}>
-            あるあるワード(任意・スペース区切り)
-            <input
-              className="input input-wide"
-              placeholder="例: 折りたたみ 木製"
-              value={form.aruaru}
-              disabled={running}
-              onChange={(e) => setForm({ ...form, aruaru: e.target.value })}
-            />
-          </label>
-          <label className="field">
-            ページ数
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={10}
-              style={{ width: 78 }}
-              value={form.pages}
-              disabled={running}
-              onChange={(e) => setForm({ ...form, pages: Number(e.target.value) })}
-            />
-          </label>
-          <label className="field">
-            出品者を調べる件数
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={120}
-              style={{ width: 78 }}
-              value={form.resolve}
-              disabled={running}
-              onChange={(e) => setForm({ ...form, resolve: Number(e.target.value) })}
-            />
-          </label>
-          <button
-            className="btn btn-primary"
-            data-busy={running || undefined}
-            onClick={start}
-            disabled={!canRun || !form.keyword.trim()}
-            type="button"
-          >
-            {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
-            {running ? "実行中" : buttonLabel}
-          </button>
+        <div className="search-form">
+          <div className="form-row search-keywords-row">
+            <label className="field field-keyword">
+              <span className="field-label">
+                キーワード
+                <span className="field-sub">最大10・1行に1つ</span>
+              </span>
+              <textarea
+                className="input input-wide input-keywords"
+                rows={4}
+                placeholder={"例：\n車載ホルダー\nスマホスタンド"}
+                value={form.keyword}
+                disabled={running}
+                onChange={(e) => setForm({ ...form, keyword: e.target.value })}
+              />
+            </label>
+            <label className="field field-aruaru">
+              <span className="field-label">
+                あるあるワード
+                <span className="field-sub">任意・1行に1つ</span>
+              </span>
+              <textarea
+                className="input input-wide input-keywords"
+                rows={4}
+                placeholder={"例：\nインポート\n海外輸入"}
+                value={form.aruaru}
+                disabled={running}
+                onChange={(e) => setForm({ ...form, aruaru: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <div className="keyword-examples">
+            <span className="hint">入力例（クリックで入れる）</span>
+            {KEYWORD_EXAMPLES.map((ex) => (
+              <button
+                key={ex.label}
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={running}
+                title={ex.keywords.join(" / ")}
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    keyword: ex.keywords.join("\n"),
+                    aruaru: ex.aruaru.join("\n"),
+                  })
+                }
+              >
+                {ex.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="form-row">
+            <label className="field">
+              ページ数
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={10}
+                style={{ width: 78 }}
+                value={form.pages}
+                disabled={running}
+                onChange={(e) => setForm({ ...form, pages: Number(e.target.value) })}
+              />
+            </label>
+            <label className="field">
+              出品者を調べる件数
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={120}
+                style={{ width: 78 }}
+                value={form.resolve}
+                disabled={running}
+                onChange={(e) => setForm({ ...form, resolve: Number(e.target.value) })}
+              />
+            </label>
+            <button
+              className="btn btn-primary"
+              data-busy={running || undefined}
+              onClick={start}
+              disabled={!canRun || !form.keyword.trim()}
+              type="button"
+            >
+              {running ? <IconLoader size={14} className="spin" /> : <IconSearch size={14} />}
+              {running ? "実行中" : buttonLabel}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="form-row">
@@ -382,7 +448,10 @@ export default function ScrapeRunner({
             <span className="hint" style={{ alignSelf: "center" }}>
               {modes.length === 0
                 ? "探し方を1つ以上選んでください"
-                : `AliExpressを${modes.length}回開きます(約${modes.length * 30}秒)`}
+                : // 画像検索は「同じ出品の写真を複数枚」使うので、その枚数だけ開く。
+                  // 枚数はサーバー側の既定値(lib/scraper/sourcing-run.ts の imageCount)と合わせる。
+                  `AliExpressを${modes.reduce((n, m) => n + (m === "image" ? IMAGE_PHOTOS : 1), 0)}回開きます` +
+                  `(約${modes.reduce((n, m) => n + (m === "image" ? IMAGE_PHOTOS : 1), 0) * 30}秒)`}
             </span>
           )}
           {withDepthChoice && !running && (

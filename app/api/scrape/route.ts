@@ -62,17 +62,21 @@ export async function POST(req: NextRequest) {
   const kind = String(body.kind ?? "");
 
   if (kind === "search") {
-    const keyword = String(body.keyword ?? "").trim();
-    if (!keyword) return NextResponse.json({ error: "キーワードを入力してください" }, { status: 400 });
-    const aruaru = String(body.aruaru ?? "")
-      .split(/[,、\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const { parseSearchWords, formatKeywordsLabel, MAX_SEARCH_KEYWORDS, MAX_ARUARU_WORDS } = await import(
+      "../../../lib/scraper/search-words"
+    );
+    // キーワードはスペース/カンマ区切りで最大10件。複数あるとそれぞれ検索して結果をまとめる
+    const keywords = parseSearchWords(body.keyword ?? body.keywords, { max: MAX_SEARCH_KEYWORDS });
+    if (!keywords.length) {
+      return NextResponse.json({ error: "キーワードを入力してください" }, { status: 400 });
+    }
+    const aruaru = parseSearchWords(body.aruaru, { max: MAX_ARUARU_WORDS });
     const pages = clamp(Number(body.pages ?? 2), 1, 10);
     const sellerLimit = clamp(Number(body.sellers ?? body.resolve ?? 60), 1, 200);
     const includeUsed = Boolean(body.includeUsed);
-    const job = createJob("search", `「${keyword}」のSOLD検索`);
-    void runSearch(job.id, keyword, aruaru, pages, sellerLimit, includeUsed);
+    const label = formatKeywordsLabel(keywords);
+    const job = createJob("search", `「${label}」のSOLD検索`);
+    void runSearch(job.id, keywords, aruaru, pages, sellerLimit, includeUsed);
     return NextResponse.json({ jobId: job.id });
   }
 
@@ -123,7 +127,7 @@ function fail(jobId: string, e: unknown) {
 
 async function runSearch(
   jobId: string,
-  keyword: string,
+  keywords: string[],
   aruaru: string[],
   pages: number,
   sellerLimit: number,
@@ -133,13 +137,20 @@ async function runSearch(
   const { MercariScraper } = await import("../../../lib/scraper/mercari");
   const { createSearch, saveListings, saveSellerResults, upsertSellers } = await import("../../../lib/scraper/persist");
   const { aggregateBySeller } = await import("../../../lib/engine/aggregate");
+  const { formatKeywordsLabel, buildSearchQueries } = await import("../../../lib/scraper/search-words");
   // ページ送りは5秒間隔。参考にした既存サービスの実測値に合わせている
   const scraper = new MercariScraper({ minIntervalMs: 5000, log });
   try {
     await scraper.start();
-    log(`検索を開始します: "${keyword}"${aruaru.length ? ` + [${aruaru.join(", ")}]` : ""}`);
+    const label = formatKeywordsLabel(keywords);
+    const queryCount = buildSearchQueries(keywords, aruaru).length;
+    log(
+      `検索を開始します: 「${label}」` +
+        (aruaru.length ? ` + [${aruaru.join(", ")}]` : "") +
+        `（${keywords.length}語 → ${queryCount}クエリ）`
+    );
 
-    const listings = await scraper.searchSold(keyword, aruaru, pages, {
+    const listings = await scraper.searchSold(keywords, aruaru, pages, {
       includeUsed,
       onPage: ({ query, page, pages: n, total }) => {
         log(`  [${query}] ${page}/${n}ページ … 累計${total}件`);
@@ -193,7 +204,7 @@ async function runSearch(
 
     setProgress(jobId, { phase: "save" });
     const keep = new Set(top.map((s) => s.seller_external_id));
-    const searchId = await createSearch(keyword, aruaru);
+    const searchId = await createSearch(keywords, aruaru);
     const sellerIds = await upsertSellers(profiles);
     await saveListings(
       listings.filter((l) => keep.has(l.seller_external_id)),

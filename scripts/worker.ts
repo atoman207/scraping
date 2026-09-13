@@ -27,6 +27,7 @@ import {
   runSellerDeepdive,
 } from "../lib/scraper/seller-run";
 import { runSourcing } from "../lib/scraper/sourcing-run";
+import { touchSession, WARN_DAYS } from "../lib/scraper/session-1688jp";
 
 const WORKER_ID = `${os.hostname()}-${process.pid}`;
 /**
@@ -40,6 +41,37 @@ const WORKER_ID = `${os.hostname()}-${process.pid}`;
 const IDLE_MIN_MS = 5000;
 const IDLE_MAX_MS = 60000;
 let idleWaitMs = IDLE_MIN_MS;
+
+/**
+ * 1688Japan の生存確認をする間隔(1日)。
+ *
+ * 1688 の仕入れ候補はこの接続ひとつに乗っている。相手が「使うたびに期限を延ばす」
+ * 作りなら毎日触ることで期限が来なくなるし、そうでなくても
+ * **切れたその日のうちに気づける**。呼び出しは1日1回・1リクエストだけ。
+ */
+const KEEPALIVE_MS = 24 * 60 * 60 * 1000;
+let nextKeepaliveAt = 0;
+
+/** 1688Japan の接続を維持する。失敗しても、ここでワーカーを止めはしない */
+async function keepalive1688jp(): Promise<void> {
+  if (Date.now() < nextKeepaliveAt) return;
+  nextKeepaliveAt = Date.now() + KEEPALIVE_MS;
+  try {
+    const r = await touchSession();
+    if (!r.ok) {
+      stamp(`1688Japan: ${r.reason}`);
+      stamp("1688Japan: npm run login:1688jp で入り直してください(1688の候補が出なくなります)。");
+      return;
+    }
+    const left = r.daysLeft === null ? "" : ` / 記載上の期限まで約${Math.floor(r.daysLeft)}日`;
+    stamp(`1688Japan: ${r.user} として接続を確認しました${left}`);
+    if (r.warn) {
+      stamp(`1688Japan: 残りが${WARN_DAYS}日を切りました。都合のよいときに入り直してください。`);
+    }
+  } catch (e) {
+    stamp(`1688Japan: 生存確認に失敗しました (${String(e).slice(0, 120)})`);
+  }
+}
 /** ページ送りの間隔。短くするとブロックされやすくなる */
 const PAGE_INTERVAL_MS = Number(process.env.SCRAPE_INTERVAL_MS ?? 5000);
 /** ブロックされたあとの冷却時間 */
@@ -68,13 +100,16 @@ async function setPhase(jobId: number, progress: JobProgress) {
 async function runSearch(job: Job) {
   const p = job.params as {
     keyword?: string;
+    keywords?: string[];
     aruaru?: string[];
     pages?: number;
     sellers?: number;
     includeUsed?: boolean;
   };
-  const keyword = String(p.keyword ?? "").trim();
-  if (!keyword) throw new Error("キーワードが指定されていません");
+  const { parseSearchWords, formatKeywordsLabel, buildSearchQueries } = await import("../lib/scraper/search-words");
+  // 新形式 keywords[] と、旧形式の単一 keyword の両方を受け付ける
+  const keywords = parseSearchWords(p.keywords?.length ? p.keywords : p.keyword);
+  if (!keywords.length) throw new Error("キーワードが指定されていません");
   const aruaru = Array.isArray(p.aruaru) ? p.aruaru.filter(Boolean).map(String) : [];
   const pages = Math.min(Math.max(Number(p.pages ?? 10), 1), 20);
   const sellerLimit = Math.min(Math.max(Number(p.sellers ?? 60), 1), 200);
@@ -84,10 +119,16 @@ async function runSearch(job: Job) {
   const scraper = new MercariScraper({ minIntervalMs: PAGE_INTERVAL_MS, log });
   try {
     await scraper.start();
-    log(`検索を開始します: "${keyword}"${aruaru.length ? ` + [${aruaru.join(", ")}]` : ""}`);
+    const label = formatKeywordsLabel(keywords);
+    const queryCount = buildSearchQueries(keywords, aruaru).length;
+    log(
+      `検索を開始します: 「${label}」` +
+        (aruaru.length ? ` + [${aruaru.join(", ")}]` : "") +
+        `（${keywords.length}語 → ${queryCount}クエリ）`
+    );
 
     // --- 巡回 ---
-    const listings = await scraper.searchSold(keyword, aruaru, pages, {
+    const listings = await scraper.searchSold(keywords, aruaru, pages, {
       includeUsed,
       onPage: ({ query, page, pages: n, total }) => {
         void setPhase(job.id, { phase: "crawl", i: page, n, label: `${query}（累計${total}件）` });
@@ -141,7 +182,7 @@ async function runSearch(job: Job) {
     // --- 保存 ---
     await setPhase(job.id, { phase: "save" });
     const keep = new Set(top.map((s) => s.seller_external_id));
-    const searchId = await createSearch(keyword, aruaru);
+    const searchId = await createSearch(keywords, aruaru);
     const sellerIds = await upsertSellers(profiles);
     const saved = await saveListings(
       listings.filter((l) => keep.has(l.seller_external_id)),
@@ -296,6 +337,9 @@ async function main() {
 
   let idleLogged = false;
   while (!stopping) {
+    // 1日1回だけ、1688Japan の接続を確かめて生かしておく
+    await keepalive1688jp();
+
     let job: Job | null = null;
     try {
       job = await claimJob(WORKER_ID);

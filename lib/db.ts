@@ -467,6 +467,16 @@ export type SourcingCandidateRow = {
   rank: number | null;
   is_picked: boolean | null;
   fetched_at: string | null;
+  // ここから下は 1688 の候補だけが持つ値。
+  // 古いDBには列が無く undefined で返るので、すべて任意にしてある。
+  /** 回头率(リピート率 %)。1688 の店の信用度でいちばん効く */
+  repeat_rate?: number | null;
+  /** 店舗バッジ(実力商家・厳選工場 など) */
+  badges?: string[] | null;
+  /** 何枚の写真から見つかったか */
+  photo_hits?: number | null;
+  /** 1688 に出品された日。長く売られている商品ほど定番 */
+  listed_at?: string | null;
 };
 
 /**

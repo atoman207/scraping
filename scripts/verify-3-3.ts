@@ -29,6 +29,7 @@ import { ScraperSession } from "../lib/scraper/browser";
 import {
   Alibaba1688Sourcing,
   AliExpressSourcing,
+  mercariPhotoUrls,
   toSearchQuery,
 } from "../lib/scraper/sourcing";
 import { rankCandidates } from "../lib/scraper/sourcing-run";
@@ -171,7 +172,7 @@ async function main() {
 
     if (target.image) {
       console.log("\n[2] 画像検索");
-      byImage = await ae.searchByImage(target.image, limit, target.title);
+      byImage = await ae.searchByImage(mercariPhotoUrls(target.image), limit, target.title);
       check("画像検索で候補を取得できた", byImage.length > 0, `${byImage.length}件`);
       if (byImage.length) {
         check(
@@ -232,7 +233,7 @@ async function main() {
   const alibaba = new Alibaba1688Sourcing();
   const links = [
     ...(await alibaba.searchCandidates(target.title)),
-    ...(target.image ? await alibaba.searchByImage(target.image) : []),
+    ...(target.image ? await alibaba.searchByImage([target.image]) : []),
   ];
   check("検索URLを組み立てられた", links.length > 0, `${links.length}件`);
   check(

@@ -200,12 +200,13 @@ export async function updateShipping(
 }
 
 /** searches テーブルに検索履歴を1行作り、そのIDを返す */
-export async function createSearch(keywords: string, aruaruWords: string[]): Promise<number> {
+export async function createSearch(keywords: string | string[], aruaruWords: string[]): Promise<number> {
+  const keywordsText = Array.isArray(keywords) ? keywords.join(",") : keywords;
   const row = must(
     await getSupabase()
       .from("searches")
       .insert({
-        keywords,
+        keywords: keywordsText,
         aruaru_words: aruaruWords.length ? aruaruWords.join(",") : null,
         platform: "mercari",
       })
